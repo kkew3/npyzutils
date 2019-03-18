@@ -1,0 +1,7 @@
+-r requirements.txt
+
+pylint
+pytest
+ipython
+pyinstaller
+twine

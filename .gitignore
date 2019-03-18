@@ -1,0 +1,8 @@
+.envrc
+rt/
+*.pyc
+.pytest_cache/
+__pycahce__/
+*.spec
+dist/
+build/
