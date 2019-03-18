@@ -26,8 +26,8 @@ if __name__ == '__main__':
     try:
         for k, v in data.items():
             if len(v.shape):
-                print(k, ':', ','.join(map(str, v.shape)), sep='')
+                print(''.join((k, ':', ','.join(map(str, v.shape)))))
             else:
-                print(k, ': <scalar>')
+                print(''.join((k, ':', '<scalar>')))
     except AttributeError:
         print(','.join(map(str, data.shape)))
