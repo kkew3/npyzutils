@@ -18,6 +18,10 @@ dist/npyzshape/npyzshape : npyzshape.py
 	pylint -E --score=no $<
 	pyinstaller -y $<
 
+dist/npzcat/npzcat : npzcat.py
+	pylint -E --score=no $<
+	pyinstaller -y $<
+
 remove:
 	rm -rf dist
 
@@ -30,3 +34,4 @@ preview:
 install:
 	$(call install_app,npycat)
 	$(call install_app,npyzshape)
+	$(call install_app,npzcat)
