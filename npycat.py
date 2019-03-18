@@ -11,9 +11,15 @@ def no_trailing_newline(s):
         s = s[:-1]
     return s
 
+class ArgumentParser(argparse.ArgumentParser):
+
+    def error(self, message):
+        self.print_help(sys.stderr)
+        self.exit(2, '%s: error: %s\n' % (self.prog, message))
+
 
 def make_parser():
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description='Concatenate or stack several npy files to one npy file.',
         epilog='Return code: '
                '0) success; '
