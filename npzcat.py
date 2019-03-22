@@ -80,7 +80,7 @@ def main():
     if keys is not None:
         try:
             for k in keys:
-                all_results[k] = merge(all_results[k], axis=args.dim)
+                all_results[k] = merge(all_data[k], axis=args.dim)
         except ValueError as err:
             logging.error(str(err))
             sys.exit(4)
