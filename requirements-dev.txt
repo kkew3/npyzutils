@@ -2,6 +2,3 @@
 
 pylint
 pytest
-ipython
-pyinstaller
-twine
