@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+if __name__ != '__main__':
+    import sys
+    print('This file is not expected to be imported', file=sys.stderr)
+
+from string import Formatter
+import argparse
+import sys
+import tempfile
+import os
+import typing
+import logging
+
+logging.basicConfig(format='%(filename)s: %(levelname)s: %(message)s')
+
+import numpy as np
+
+
+PROGNAME = os.path.basename(__file__)
+
+
+def make_parser():
+    parser = argparse.ArgumentParser(
+        description='Convert a specific key in npz file to a single npyfile.')
+    parser.add_argument('-k', '--key',
+                        help='key to extract; this option is not required if '
+                             'there\'s only one key in the npz file')
+    parser.add_argument('-S', '--strict', action='store_true',
+                        help='abort the program if one of the NPZFILEs '
+                             'cannot be loaded; note that even without this '
+                             'option, KeyError won\'t be suppressed')
+    parser.add_argument('-E', '--write-empty',
+                        dest='write_empty_on_keyerror',
+                        action='store_true',
+                        help='if specified, an empty file will be written '
+                             'on KeyError')
+    parser.add_argument('-n', '--print-name', action='store_true',
+                        dest='print_name',
+                        help='print output file names one per line')
+    ofgrop = parser.add_argument_group('output file options',
+                                       'Only one of the `-o\' and `-O\' '
+                                       'should be specified. Both options '
+                                       'require non-empty argument.')
+    ofgrop.add_argument('-o', '--tofile',
+                        help='output file; if this option is specified, at '
+                             'most one npz file can be specified as NPZFILE')
+    ofgrop.add_argument('-O', '--tofile-template',
+                        dest='tofile_template',
+                        default='{0}_{1}.npy',
+                        help='output file `str.format` template; if this '
+                             'option is specified, the output file will be '
+                             'named to `TOFILE_TEMPLATE.format(NPZFILE, KEY)`'
+                             '. TOFILE_TEMPLATE normally should leave '
+                             'placeholders for both NPZFILE and KEY so as not'
+                             ' to trigger error. See also option `-f\'. '
+                             'When neither `-o\' nor `-O\' is specified, '
+                             '`-O "{0}_{1}.npy"\' is the default behavior')
+    ofgrop.add_argument('-F', action='append', dest='force_template',
+                        default=[],
+                        help='if not specified, the template string in `-O\' '
+                             'must have two placeholders; if specified as '
+                             '`-F\', it must have the first placeholder; if '
+                             'specified as `-FF...\' (two or more `F\'s, no '
+                             'requirement is applied on the template string')
+    parser.add_argument('npzfiles', metavar='NPZFILE', nargs='*',
+                        help='if nothing is specified, a list of filenames, '
+                             'one per line, is expected at stdin. If `-o\' '
+                             'was specified, all NPZFILE but the first one '
+                             'will be ignored')
+    return parser
+
+def get_n_placeholders(template: str) -> int:
+    """
+    >>> get_n_placeholders('{}_{}.npy')
+    2
+    """
+    return sum(1 for _ in filter(lambda x: x[1] is not None,
+                                 Formatter().parse(template)))
+
+def main():
+    args = make_parser().parse_args()
+    if args.tofile and args.tofile_template:
+        logging.error('only one of `-o\' and `-O\' is expected to be '
+                      'specified')
+        return 1
+    if args.tofile_template:
+        n_var = get_n_placeholders(args.tofile_template)
+        if n_var > 2:
+            logging.error('at most two placeholders in TOFILE_TEMPLATE '
+                          'is allowed but got %d', n_var)
+            return 1
+        for i in range(2):
+            if len(args.force_template) <= i and n_var < 2 - i:
+                logging.error('%d placeholders in TOFILE_TEMPLATE is '
+                              'expected but got %d',
+                              2 - len(args.force_template), n_var)
+                return 1
+
+    if args.npzfiles:
+        npzfiles = iter(args.npzfiles)
+    else:
+        npzfiles = filter(None, (x.rstrip('\n') for x in sys.stdin))
+
+    for filename in npzfiles:
+
+        try:
+            data = np.load(filename)
+        except OSError:
+            if args.strict:
+                logging.error('fail to load %s', filename)
+                return 2
+            logging.warning('fail to load %s; skipped', filename)
+            continue
+        try:
+            n_keys = sum(1 for _ in data.keys())
+        except AttributeError:
+            if args.strict:
+                logging.error('%s is not an npzfile', filename)
+                return 2
+            logging.warning('%s is not an npzfile; skipped', filename)
+            continue
+        if not args.key:
+            if not n_keys:
+                logging.warning('nothing to read from %s; skipped',
+                                filename)
+                continue
+            if n_keys > 1:
+                logging.error('more than one keys exist in %s but KEY '
+                              'is not specified', filename)
+                return 4
+            key = list(data.keys())[0]
+            if args.tofile:
+                tofile = args.tofile
+            else:
+                tofile = args.tofile_template.format(filename, key)
+            data = data[key]
+            try:
+                np.save(tofile, data)
+            except FileNotFoundError:
+                logging.debug('FileNotFoundError when writing')
+                os.makedirs(os.path.dirname(tofile))
+                logging.debug('Resolved FileNotFoundError by making '
+                              'parent directories of %s', tofile)
+                np.save(tofile, data)
+        else:
+            if args.tofile:
+                tofile = args.tofile
+            else:
+                tofile = args.tofile_template.format(filename, args.key)
+            try:
+                data = data[args.key]
+            except KeyError:
+                if not args.write_empty_on_keyerror:
+                    logging.error('KEY %s not found in %s',
+                                  args.key, filename)
+                    return 8
+                logging.debug('Writing empty file %s', tofile)
+                try:
+                    open(tofile, 'w').close()
+                except FileNotFoundError:
+                    logging.debug('FileNotFoundError when writing')
+                    os.makedirs(os.path.dirname(tofile))
+                    logging.debug('Resolved FileNotFoundError by making '
+                                  'parent directories of %s', tofile)
+                    open(tofile, 'w').close()
+            else:
+                try:
+                    np.save(tofile, data)
+                except FileNotFoundError:
+                    logging.debug('FileNotFoundError when writing')
+                    os.makedirs(os.path.dirname(tofile))
+                    logging.debug('Resolved FileNotFoundError by making '
+                                  'parent directories of %s', tofile)
+                    np.save(tofile, data)
+        if args.print_name:
+            print(tofile)
+        if args.tofile:
+            logging.debug('Broken the NPZFILE loop as `-o\' was '
+                          'specified')
+            break
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
