@@ -6,9 +6,7 @@ if __name__ != '__main__':
 from string import Formatter
 import argparse
 import sys
-import tempfile
 import os
-import typing
 import logging
 
 logging.basicConfig(format='%(filename)s: %(levelname)s: %(message)s')
