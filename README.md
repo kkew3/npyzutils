@@ -14,7 +14,7 @@ Installation
 ------------
 
 ```bash
-./make-launch-scripts npyzshape npycat npzcat
+find src/ -type f | xargs ./make-launch-scripts
 ```
 
 The launch scripts will be generated under `dist/`
