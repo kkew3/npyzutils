@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+import os
+import sys
+import typing
+import argparse
+import logging
+from collections import OrderedDict
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(filename)s: %(levelname)s: %(message)s')
+
+import numpy as np
+
+
+NpzData = typing.Dict[str, np.ndarray]
+
+ERROR_ARGS = 1
+ERROR_READ = 2
+ERROR_WRITE = 4
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_help(sys.stderr)
+        self.exit(1, '{}: error: {}\n'.format(self.prog, message))
+
+
+def make_parser():
+    parser = ArgumentParser(
+        description='Zip and compress npy or npz file(s). If the input is '
+                    'FILENAME.npy, the default output will be FILENAME.npz '
+                    'with FILENAME.npy as a zip file entry within '
+                    'FILENAME.npz. If the input is FILENAME.npz, the default '
+                    'output will be written in-place such that the content '
+                    'is compressed if not already compressed. If the input '
+                    'consists of multiple npy files, e.g. F1.npy, F2.npy, '
+                    'the output filename must be specified, e.g. as OUT.npz, '
+                    'which will contain F1.npy and F2.npy as zip file '
+                    'entries.')
+    parser.add_argument('npyzfiles', metavar='FILE', nargs='*',
+                        help='npy/npz files to compress; if nothing is '
+                             'specified, a list of npy/npz filenames will be '
+                             'expected at stdin, one per line')
+    parser.add_argument('-B', '--bundle-npy', action='store_true',
+                        dest='bundle_npy',
+                        help='bundle several npy files together into '
+                             'TOFILE; if not in strict mode, all non-npy '
+                             'FILEs (e.g. npz files) will be omitted, '
+                             'otherwise, error raised')
+    parser.add_argument('-o', '--tofile',
+                        help='the npz file to write. TOFILE should ends with '
+                             '`.npz\'. If `--bundle-npy\' is specified, this '
+                             'option is mandatory. If more than one FILE is '
+                             'specified, this option is omitted (so default '
+                             'TOFILE as mentioned in Description will be '
+                             'adopted).')
+    parser.add_argument('--overwrite', default='skip',
+                        choices=('always', 'ask', 'skip', 'abort'),
+                        help='overwriting policy when TOFILE is an existing '
+                             'file. If `always\', always overwrite. If `ask'
+                             '\', interactively prompt user what to do ('
+                             'skip/abort/rename current TOFILE). If `skip\', '
+                             'skip current TOFILE. If `abort\', abort the '
+                             'program')
+    parser.add_argument('-S', '--strict', action='store_true',
+                        help='option to enable strict mode. When in strict '
+                             'mode, if one of FILE cannot be loaded, or if '
+                             ' one of TOFILE cannot be written, or if there '
+                             'exists duplicate zip file entry, the program '
+                             'will be aborted. See also `--bundle-npy\'')
+    return parser
+
+
+def read_npyz(filename: str) -> typing.Tuple[typing.Any, bool]:
+    """
+    Returns (npyz data, whether or not data is npy data).
+    """
+    data = np.load(filename)
+    try:
+        _ = list(data.keys())
+        is_npy = False
+    except (AttributeError, TypeError):
+        is_npy = True
+    return data, is_npy
+
+
+def default_tofile(is_npy: bool, filename: str) -> str:
+    if is_npy:
+        return os.path.splitext(filename)[0] + '.npz'
+    return filename
+
+
+class Skip(BaseException):
+    pass
+
+class Abort(BaseException):
+    def __init__(self, retcode: int = 0):
+        super().__init__(retcode)
+
+    @property
+    def retcode(self):
+        return self.args[0]
+
+
+def warning_strict(message: str, strict: bool, retcode: int) -> None:
+    if strict:
+        logging.error(message)
+        raise Abort(retcode)
+    logging.warning(message)
+
+
+def npykey(filename: str) -> str:
+    return os.path.splitext(os.path.basename(filename))[0]
+
+
+def try_overwrite(data: NpzData, tofile: str, policy: str) -> None:
+    """
+    :param data: the npz data to write
+    :param tofile: output filename
+    :param policy: overwrite policy
+    :raise IOError: if tofile cannot be written
+    :raise Skip: if it means to skip tofile
+    :raise Abort: if it means to abort the program
+    """
+    try:
+        open(tofile).close()
+    except FileNotFoundError:
+        np.savez_compressed(tofile, **data)
+    else:
+        if policy == 'always':
+            np.savez_compressed(tofile, **data)
+        elif policy == 'skip':
+            raise Skip
+        elif policy == 'abort':
+            logging.info('Aborted before writing "{}"'
+                         .format(tofile))
+            raise Abort
+        else:
+            prompt = ('"{}" already exists; '
+                      '([skip], abort, rename NEW_TOFILE)> '.format(tofile))
+            tokens = input(prompt).split(maxsplit=1)
+            if not tokens:
+                tokens = ['skip']
+            while (tokens[0] not in ('skip', 'abort', 'rename')
+                   or tokens[0] == 'rename' and (len(tokens) == 1
+                                                 or not tokens[1])):
+                tokens = input(prompt).split(maxsplit=1)
+            if tokens[0] == 'skip':
+                raise Skip
+            if tokens[0] == 'abort':
+                raise Abort(ERROR_WRITE)
+            if tokens[0] == 'rename':
+                new_tofile = tokens[1]
+                try_overwrite(data, new_tofile, 'ask')
+
+
+def read_npyfiles(npyzfiles, strict: bool) -> NpzData:
+    zdata = OrderedDict()
+    for filename in npyzfiles:
+        try:
+            da, is_npy = read_npyz(filename)
+        except OSError:
+            warning_strict('Cannot open "{}"'.format(filename),
+                           strict, ERROR_READ)
+            continue
+        else:
+            if not is_npy:
+                warning_strict('"{}" is npz file'.format(filename),
+                               strict, ERROR_READ)
+                continue
+            ky = npykey(filename)
+            if ky in zdata:
+                warning_strict('Zip entry "{}" alreay exists'.format(ky),
+                               strict, ERROR_READ)
+                continue
+            zdata[ky] = da
+    return zdata
+
+
+def main():
+    args = make_parser().parse_args()
+    retcode = 0
+
+    try:
+        if args.npyzfiles:
+            npyzfiles = args.npyzfiles
+        else:
+            npyzfiles = list(map(str.rstrip('\n'), sys.stdin))
+
+        if args.bundle_npy:
+            if not args.tofile:
+                logging.error('TOFILE not specified')
+                sys.exit(1)
+            zdata = read_npyfiles(npyzfiles, args.strict)
+            try:
+                try_overwrite(zdata, args.tofile, args.overwrite)
+            except Skip:
+                # nothing to skip in this case
+                logging.info('Skipped writing "{}"'.format(args.tofile))
+            except IOError:
+                warning_strict('Failed to write to "{}"'.format(args.tofile),
+                               args.strict, ERROR_WRITE)
+                retcode |= ERROR_WRITE
+        else:
+            for filename in npyzfiles:
+                try:
+                    da, is_npy = read_npyz(filename)
+                except OSError:
+                    warning_strict('Cannot open "{}"'.format(filename),
+                                   args.strict, ERROR_READ)
+                    continue
+                else:
+                    if len(npyzfiles) > 1 or not args.tofile:
+                        tofile = default_tofile(is_npy, filename)
+                    else:
+                        tofile = args.tofile
+                    if is_npy:
+                        zdata = {npykey(filename): da}
+                        overwrite = args.overwrite
+                    else:
+                        zdata = da
+                        overwrite = 'always'
+                    try:
+                        try_overwrite(zdata, tofile, overwrite)
+                    except Skip:
+                        logging.info('Skipped "{}" -> "{}"'
+                                     .format(filename, tofile))
+                        continue
+                    except IOError:
+                        warning_strict('Failed to write to "{}"'
+                                        .format(args.tofile),
+                                       args.strict, ERROR_WRITE)
+                        retcode |= ERROR_WRITE
+                        continue
+    except Abort as err:
+        retcode |= err.retcode
+        if err.retcode:
+            logging.info('Aborted')
+    except (KeyboardInterrupt, BrokenPipeError):
+        retcode |= 130
+    sys.exit(retcode)
+
+
+if __name__ == '__main__':
+    main()
