@@ -40,6 +40,11 @@ def make_parser():
                         help='npz field keys to use; if not specified, all '
                              'field keys of the first npz file provided will '
                              'be used')
+    parser.add_argument('-n', '--print-name', action='store_true',
+                        dest='print_name',
+                        help='if specified, print the output filename in the '
+                             'end. This option will only be considered if '
+                             'option `-o\' has been specified')
     return parser
 
 
@@ -89,6 +94,8 @@ def main():
         try:
             with open(args.tofile, 'wb') as outfile:
                 np.savez(outfile, **all_results)
+            if args.print_name:
+                print(args.tofile)
         except OSError:
             logging.error('Failed to write result to "%s"', args.tofile)
     else:
