@@ -30,7 +30,7 @@ def make_parser():
     parser.add_argument('-d', '--output-delimiter', dest='delim',
                         metavar='DELIM', default=':', type=delimiter,
                         help=r"DELIM with `\t', `\0' supported; "
-                             r"`\n', `\r' are not allowd")
+                             r"`\n', `\r' are not allowd. Default to colon")
     return parser
 
 
