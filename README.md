@@ -17,6 +17,9 @@ Installation
 ------------
 
 ```bash
+python3 -m virtualenv rt
+. rt/bin/activate
+pip install -r requirements.txt
 find src/ -type f | xargs ./make-launch-scripts
 ```
 
