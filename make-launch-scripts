@@ -16,10 +16,12 @@ PYTHONHOME="${CURDIR}/rt" python3 "${CURDIR}/${pyname}" "\$@"
 EOF
 }
 
-mkdir -p dist
-printf "%s\n" "$@" \
-| while read -r pyname; do
-	tofile="dist/$(basename "$pyname")"
-	write_launch_script "$pyname" "$tofile"
-	chmod u+x "$tofile"
-done
+if [ -n "$1" ]; then
+	mkdir -p dist
+	printf "%s\n" "$@" \
+	| while read -r pyname; do
+		tofile="dist/$(basename "$pyname")"
+		write_launch_script "$pyname" "$tofile"
+		chmod u+x "$tofile"
+	done
+fi
