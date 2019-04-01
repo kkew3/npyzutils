@@ -21,7 +21,6 @@ ERROR_WRITE = 4
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        self.print_help(sys.stderr)
         self.exit(1, '{}: error: {}\n'.format(self.prog, message))
 
 
