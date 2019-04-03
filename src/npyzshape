@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 import sys
+import logging
 import argparse
 
+lformat = '%(filename)s: %(levelname)s: %(message)s'
+logging.basicConfig(format=lformat)
+
 import numpy as np
+
+
+ERROR_LOADFILE = 2
+ERROR_KEYBOARD = 130
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.exit(1, '%s: error: %s\n' % (self.prog, message))
 
 
 def delimiter(string):
@@ -16,33 +29,91 @@ def delimiter(string):
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description='Print array shape. If the input file is an npy file, '
                     'the output will be a comma-separated list of integers, '
                     'signifying the dimension along each axis; if the input '
                     'file is an npz file, each line of the output will be '
-                    '"${filename}${DELIM}${comma-separated-list-of-'
+                    '"${keyname}${DELIM}${comma-separated-list-of-'
                     'dimensions}".')
     # Reading from stdin is too complicated ... See:
     # - https://stackoverflow.com/q/11305790/7881370
     # - https://stackoverflow.com/q/14283025/7881370
-    parser.add_argument('npyzfile')
-    parser.add_argument('-d', '--output-delimiter', dest='delim',
+    parser.add_argument('npyzfiles', metavar='NPYZFILE', nargs='*',
+                        help='the npy/npz file to inspect shapes; if none is '
+                             'found, a list of filenames will be expected '
+                             'on stdin, one per line')
+    parser.add_argument('-d', '--field-delimiter', dest='delim',
                         metavar='DELIM', default=':', type=delimiter,
                         help=r"DELIM with `\t', `\0' supported; "
                              r"`\n', `\r' are not allowd. Default to colon")
+    parser.add_argument('-F', '--show-filename', dest='show_filename',
+                        metavar='SHOW_FILENAME_POLICY',
+                        choices=('auto', 'never', 'always'),
+                        default='auto',
+                        help='if filename is shown, the output on each line '
+                             'will be filename, [keyname,] '
+                             'comma-separated-list-of-dimensions separated '
+                             'by DELIM. When `auto\', filename is shown when '
+                             'there are multiple NPYZFILEs. Default to '
+                             '`auto\'')
     return parser
 
 
-if __name__ == '__main__':
-    args = make_parser().parse_args()
-    npyzfile = args.npyzfile if args.npyzfile else sys.stdin.buffer
-    data = np.load(npyzfile)
+def show_shape(array):
+    if array.shape:
+        sbuf = ','.join(map(str, array.shape))
+    else:
+        sbuf = '<scalar>'
+    return sbuf
+
+
+def inspect_npyzshape(filename: str, delim: str, show_filename: bool):
+    data = np.load(filename)
+    lines = []
     try:
         for k, v in data.items():
-            if len(v.shape):
-                print(''.join((k, args.delim, ','.join(map(str, v.shape)))))
-            else:
-                print(''.join((k, args.delim, '<scalar>')))
+            tokens = [k, show_shape(v)]
+            if show_filename:
+                tokens.insert(0, filename)
+            lines.append(delim.join(tokens))
     except AttributeError:
-        print(','.join(map(str, data.shape)))
+        tokens = [show_shape(data)]
+        if show_filename:
+            tokens.insert(0, filename)
+        lines.append(delim.join(tokens))
+    return lines
+
+
+def main():
+    retcode = 0
+    try:
+        args = make_parser().parse_args()
+        if args.npyzfiles:
+            npyzfiles = args.npyzfiles
+        else:
+            npyzfiles = list(map(str.rstrip('\n'), sys.stdin))
+        show_filename = args.show_filename
+        more_than_one_files = (len(npyzfiles) > 1)
+        if show_filename == 'auto':
+            show_filename = 'always' if more_than_one_files else 'never'
+        show_filename = {
+            'always': True,
+            'never': False,
+        }[show_filename]
+
+        for filename in npyzfiles:
+            try:
+                lines = inspect_npyzshape(filename, args.delim, show_filename)
+                print('\n'.join(lines))
+            except OSError:
+                retcode |= ERROR_LOADFILE
+                logging.warning('Failed to load {}'.format(filename))
+        return retcode
+    except KeyboardInterrupt:
+        retcode |= ERROR_KEYBOARD
+        return retcode
+
+
+if __name__ == '__main__':
+    sys.exit(main())
