@@ -57,6 +57,13 @@ def make_parser():
                              'by DELIM. When `auto\', filename is shown when '
                              'there are multiple NPYZFILEs. Default to '
                              '`auto\'')
+    parser.add_argument('-K', '--key-only', dest='key_only',
+                        action='store_true',
+                        help='if enabled, for npy files, nothing will be '
+                             'shown; for npz file, only the key names will '
+                             'be printed. This option makes the program '
+                             'faster as there\'d be no need to actually read '
+                             'arrays into memory')
     return parser
 
 
@@ -68,17 +75,22 @@ def show_shape(array):
     return sbuf
 
 
-def inspect_npyzshape(filename: str, delim: str, show_filename: bool):
+def inspect_npyzshape(filename: str, delim: str, show_filename: bool,
+                      key_only: bool):
     data = np.load(filename)
     lines = []
     try:
-        for k, v in data.items():
-            tokens = [k, show_shape(v)]
+        for k in data.keys():
+            tokens = [k]
+            if not key_only:
+                tokens.append(show_shape(data[k]))
             if show_filename:
                 tokens.insert(0, filename)
             lines.append(delim.join(tokens))
     except AttributeError:
-        tokens = [show_shape(data)]
+        tokens = []
+        if not key_only:
+            tokens.append(show_shape(data))
         if show_filename:
             tokens.insert(0, filename)
         lines.append(delim.join(tokens))
@@ -104,7 +116,8 @@ def main():
 
         for filename in npyzfiles:
             try:
-                lines = inspect_npyzshape(filename, args.delim, show_filename)
+                lines = inspect_npyzshape(filename, args.delim, show_filename,
+                                          args.key_only)
                 print('\n'.join(lines))
             except OSError:
                 retcode |= ERROR_LOADFILE
