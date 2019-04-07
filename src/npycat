@@ -2,20 +2,15 @@
 import sys
 import argparse
 import logging
-logging.basicConfig(format='%(filename)s: %(levelname)s: %(message)s')
 
 import numpy as np
 
+logging.basicConfig(format='%(filename)s: %(levelname)s: %(message)s')
 
-def no_trailing_newline(s):
-    if s.endswith('\n'):
-        s = s[:-1]
-    return s
 
 class ArgumentParser(argparse.ArgumentParser):
-
     def error(self, message):
-        self.exit(2, '%s: error: %s\n' % (self.prog, message))
+        self.exit(1, '%s: error: %s\n' % (self.prog, message))
 
 
 def make_parser():
@@ -50,6 +45,12 @@ def make_parser():
                              'anything, a list of npy filenames will be '
                              'expected at stdin, one per line')
     return parser
+
+
+def no_trailing_newline(s):
+    if s.endswith('\n'):
+        s = s[:-1]
+    return s
 
 
 def main():
