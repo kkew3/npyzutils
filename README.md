@@ -10,8 +10,10 @@ A collection of command line utilities to manipulate `npy` or `npz` files.
 - `npyzz`: compress single `npy` file into `npz` file,
            bundle and compress multiple `npy` files into one single `npz` file,
            or re-compress `npz` file
+- `npyz2img`: display data of `npy` file or `npz` file as image(s), supporting
+              advanced indexing
 
-Will add more as needed
+Will add more as needed.
 
 Installation
 ------------
@@ -23,4 +25,4 @@ pip install -r requirements.txt
 find src/ -type f | xargs ./make-launch-scripts
 ```
 
-The launch scripts will be generated under `dist/`
+The launch scripts will be generated under `dist/`.
