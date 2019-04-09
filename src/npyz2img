@@ -149,23 +149,23 @@ def make_parser():
     return parser
 
 
-class NilKeyError(BaseException):
+class NilKeyError(Exception):
     pass
 
 
-class ShapeMismatchError(BaseException):
+class ShapeMismatchError(Exception):
     pass
 
 
-class UnexpectedDTypeError(BaseException):
+class UnexpectedDTypeError(Exception):
     pass
 
 
-class NotNormalizedError(BaseException):
+class NotNormalizedError(Exception):
     pass
 
 
-class InvalidOutputTemplate(BaseException):
+class InvalidOutputTemplate(Exception):
     pass
 
 

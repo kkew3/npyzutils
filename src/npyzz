@@ -89,10 +89,11 @@ def default_tofile(is_npy: bool, filename: str) -> str:
     return filename
 
 
-class Skip(BaseException):
+class Skip(Exception):
     pass
 
-class Abort(BaseException):
+
+class Abort(Exception):
     def __init__(self, retcode: int = 0):
         super().__init__(retcode)
 
