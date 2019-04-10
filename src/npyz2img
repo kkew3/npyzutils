@@ -106,10 +106,11 @@ def make_parser():
                               'will be mandatory if NPYZFILE is an npz file '
                               'containing more than one key')
     indopts.add_argument('-I', '--index', metavar='SLICE_EXPR',
-                         type=slice_expr,
+                         type=slice_expr, default=':',
                          help='the indexing expression if it\'s not intended '
                               'to use the entire data file as source of '
-                              'images. For example, `:,1:,...')
+                              'images. For example, `:,1:,... Default to '
+                              '`:\'')
     rdropts = parser.add_argument_group('rendering options')
     rdropts.add_argument('-A', '--cmap', default='gray',
                          help='cmap to use if underlying images are '
@@ -120,8 +121,10 @@ def make_parser():
                               'to render, the behavior will be up to the '
                               'presence of option `--overwrite\'')
     outopts.add_argument('-d', '--todir', type=os.path.normpath,
+                         default=os.getcwd(),
                          help='write to files under existing TODIR; the files'
-                              ' will be written as per OUT_TEMPLATE')
+                              ' will be written as per OUT_TEMPLATE. Default '
+                              'to current working directory')
     outopts.add_argument('-P', '--out-template',
                          help='the `str.format` template string used to form '
                               'the output file. This option will be omitted '
@@ -387,6 +390,9 @@ def main():
         except InvalidOutputTemplate:
             logging.error('output template "%s" invalid', args.output_format)
             return ERROR_ARGS
+        except TypeError as err:
+            logging.error('TypeError: %s', err)
+            return ERROR_DATA
 
     return 0
 
