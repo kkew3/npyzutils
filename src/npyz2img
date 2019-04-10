@@ -303,7 +303,11 @@ def write_images(image_source, todir: str, output_format: typing.Optional[str],
         filename = os.path.join(todir, name)
         if not overwrite and os.path.isfile(filename):
             raise FileExistsError(filename)
-        plt.imsave(filename, img, **render_kwargs)
+        if issubclass(img.dtype.type, np.integer):
+            vmin, vmax = 0, 255
+        else:
+            vmin, vmax = 0.0, 1.0
+        plt.imsave(filename, img, vmin=vmin, vmax=vmax, **render_kwargs)
 
 
 def write_image(image_source, tofile: str, output_format: typing.Optional[str],
