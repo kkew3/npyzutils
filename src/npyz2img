@@ -392,7 +392,10 @@ def main():
             logging.warning('file "%s" already exists; aborted', err.args[0])
             return 0
         except InvalidOutputTemplate:
-            logging.error('output template "%s" invalid', args.output_format)
+            logging.error('output template "%s" is invalid or imcompatible '
+                          'with CHANNELS "%s"',
+                          args.out_template,
+                          args.channels)
             return ERROR_ARGS
         except TypeError as err:
             logging.error('TypeError: %s', err)
