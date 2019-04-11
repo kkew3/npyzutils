@@ -26,3 +26,15 @@ find src/ -type f | xargs ./make-launch-scripts
 ```
 
 The launch scripts will be generated under `dist/`.
+
+Currently there's no plan to distribute via `PyPI`, because I don't want to
+spoil the global `pip` by `numpy` and friends.
+
+
+Similar projects
+----------------
+
+- [nplook](https://github.com/gustavla/nplook.git): better handling of various
+  data types, like `str`, `dict`, whereas its counterpart in this collection,
+  the `npyzshape`, only support numpy arrays in `npy` files or numpy arrays as
+  values in `npz` files.
