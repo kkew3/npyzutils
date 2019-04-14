@@ -185,7 +185,7 @@ def main():
         if args.npyzfiles:
             npyzfiles = args.npyzfiles
         else:
-            npyzfiles = list(map(str.rstrip('\n'), sys.stdin))
+            npyzfiles = [x.rstrip('\n') for x in sys.stdin]
 
         if args.bundle_npy:
             if not args.tofile:

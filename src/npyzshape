@@ -104,7 +104,7 @@ def main():
         if args.npyzfiles:
             npyzfiles = args.npyzfiles
         else:
-            npyzfiles = list(map(str.rstrip('\n'), sys.stdin))
+            npyzfiles = [x.rstrip('\n') for x in sys.stdin]
         show_filename = args.show_filename
         more_than_one_files = (len(npyzfiles) > 1)
         if show_filename == 'auto':
