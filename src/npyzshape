@@ -57,6 +57,10 @@ def make_parser():
                              'by DELIM. When `auto\', filename is shown when '
                              'there are multiple NPYZFILEs. Default to '
                              '`auto\'')
+    parser.add_argument('-T', '--show-dtype', dest='show_dtype',
+                        action='store_true',
+                        help='show dtype after the shape, separated by '
+                             'DELIM')
     parser.add_argument('-K', '--key-only', dest='key_only',
                         action='store_true',
                         help='if enabled, for npy files, nothing will be '
@@ -75,25 +79,35 @@ def show_shape(array):
     return sbuf
 
 
-def inspect_npyzshape(filename: str, delim: str, show_filename: bool,
-                      key_only: bool):
+def inspect_npyzshape(filename: str, delim: str, show_dtype: bool,
+                      show_filename: bool, key_only: bool):
     data = np.load(filename)
     lines = []
     try:
-        for k in data.keys():
-            tokens = [k]
-            if not key_only:
-                tokens.append(show_shape(data[k]))
-            if show_filename:
-                tokens.insert(0, filename)
-            lines.append(delim.join(tokens))
+        keys = data.keys()
     except AttributeError:
         tokens = []
         if not key_only:
             tokens.append(show_shape(data))
         if show_filename:
             tokens.insert(0, filename)
+        if show_dtype:
+            tokens.append(str(data.dtype))
         lines.append(delim.join(tokens))
+    else:
+        try:
+            for k in data.keys():
+                tokens = [k]
+                d = data[k]
+                if not key_only:
+                    tokens.append(show_shape(d))
+                if show_filename:
+                    tokens.insert(0, filename)
+                if show_dtype:
+                    tokens.append(str(d.dtype))
+                lines.append(delim.join(tokens))
+        finally:
+            data.close()
     return lines
 
 
@@ -117,7 +131,7 @@ def main():
         for filename in npyzfiles:
             try:
                 lines = inspect_npyzshape(filename, args.delim, show_filename,
-                                          args.key_only)
+                                          args.show_dtype, args.key_only)
                 print('\n'.join(lines))
             except OSError:
                 retcode |= ERROR_LOADFILE
