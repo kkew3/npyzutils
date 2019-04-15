@@ -15,13 +15,18 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def make_parser():
     parser = ArgumentParser(
-        description='Concatenate or stack several npy files to one npy file.',
-        epilog='Return code: '
-               '0) success; '
-               '1) argument parsing error; '
-               '2) failed to load one or more npy file(s); '
-               '4) arrays have inconsistent dimension; '
-               '8) failed to write result to file.')
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='''\
+Concatenate or stack several npy files to one npy file.
+
+Return code:
+
+    0    success
+    1    argument parsing error
+    2    failed to load one or more npy files
+    4    arrays have inconsistent dimension
+    8    failed to write result to file
+''')
     parser.add_argument('-s', '--stack', action='store_true',
                         help='stack arrays rather than concatenate them')
     parser.add_argument('-d', '--dim', type=int, default=0,

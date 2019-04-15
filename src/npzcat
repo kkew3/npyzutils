@@ -16,9 +16,8 @@ class ArgumentParser(argparse.ArgumentParser):
 def make_parser():
     parser = ArgumentParser(
         description='Concatenate or stack several npz files to one npz '
-                    'file.',
-        epilog='`--\' is supported to separate optional and positional '
-               'arguments.')
+                    'file. Use `--\' to mark the beginning of NPZFILEs if '
+                    'necessary.')
     parser.add_argument('-s', '--stack', action='store_true',
                             help='stack arrays rather than concatenate them')
     parser.add_argument('-d', '--dim', type=int, default=0,
@@ -31,7 +30,7 @@ def make_parser():
     parser.add_argument('-S', '--strict', action='store_true',
                         help='fail immediately if a numpy file cannot be '
                              'loaded')
-    parser.add_argument('npzfiles', nargs='*',
+    parser.add_argument('npzfiles', nargs='*', metavar='NPZFILE',
                         help='npzfiles to concatenate; if not provided '
                              'anything, a list of npz filenames will be '
                              'expected at stdin, one per line')
@@ -47,18 +46,12 @@ def make_parser():
     return parser
 
 
-def no_trailing_newline(s):
-    if s.endswith('\n'):
-        s = s[:-1]
-    return s
-
-
 def main():
     args = make_parser().parse_args()
     if args.npzfiles:
         npzfiles = args.npzfiles
     else:
-        npzfiles = list(map(no_trailing_newline, sys.stdin))
+        npzfiles = [x.rstrip('\n') for x in sys.stdin]
     all_data = defaultdict(list)
     keys = None
     for filename in npzfiles:
