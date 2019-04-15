@@ -31,6 +31,13 @@ Currently there's no plan to distribute via `PyPI`, because I don't want to
 spoil the global `pip` by `numpy` and friends.
 
 
+Documentation
+-------------
+
+See `COMMAND --help`. May also refer to [HTML help page](doc/index.html),
+which is merely a copy of the `--help` output.
+
+
 Similar projects
 ----------------
 
