@@ -122,7 +122,8 @@ output options:
 
 # npyzshape
 ```
-usage: npyzshape [-h] [-d DELIM] [-H] FIELD_SPEC [NPYZFILE [NPYZFILE ...]]
+usage: npyzshape [-h] [-d DELIM] [-H] [-c FIELD_SPEC]
+                 [NPYZFILE [NPYZFILE ...]]
 
 Display array metainfo like shape in numpy npy/npz files. Reading array from
 stdin is not supported unless `--reading-header' option is used.
@@ -141,7 +142,6 @@ FIELDS_SPEC format
         t      the array dtype
 
 positional arguments:
-  FIELD_SPEC            fields specification string
   NPYZFILE              the npy/npz file(s) to inspect shapes
 
 optional arguments:
@@ -153,6 +153,8 @@ optional arguments:
                         much faster and memory-saving, please note that this
                         function may break in the future as it uses potentiall
                         unstable API of numpy (accessing protected attributes)
+  -c FIELD_SPEC, --fields-spec FIELD_SPEC
+                        fields specification string; default to `kS'
 ```
 
 # npyzz

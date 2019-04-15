@@ -115,7 +115,8 @@ output options:
   --overwrite           if not specified, abort whenever an existing file
                         exists; otherwise overwrite existing files</code></pre>
 <h1 id="npyzshape">npyzshape</h1>
-<pre><code>usage: npyzshape [-h] [-d DELIM] [-H] FIELD_SPEC [NPYZFILE [NPYZFILE ...]]
+<pre><code>usage: npyzshape [-h] [-d DELIM] [-H] [-c FIELD_SPEC]
+                 [NPYZFILE [NPYZFILE ...]]
 
 Display array metainfo like shape in numpy npy/npz files. Reading array from
 stdin is not supported unless `--reading-header&#39; option is used.
@@ -134,7 +135,6 @@ FIELDS_SPEC format
         t      the array dtype
 
 positional arguments:
-  FIELD_SPEC            fields specification string
   NPYZFILE              the npy/npz file(s) to inspect shapes
 
 optional arguments:
@@ -145,7 +145,9 @@ optional arguments:
   -H, --reading-header  decide the metainfo by reading the header; despite
                         much faster and memory-saving, please note that this
                         function may break in the future as it uses potentiall
-                        unstable API of numpy (accessing protected attributes)</code></pre>
+                        unstable API of numpy (accessing protected attributes)
+  -c FIELD_SPEC, --fields-spec FIELD_SPEC
+                        fields specification string; default to `kS&#39;</code></pre>
 <h1 id="npyzz">npyzz</h1>
 <pre><code>usage: npyzz [-h] [-B] [-o TOFILE] [--overwrite {always,ask,skip,abort}] [-S]
              [FILE [FILE ...]]

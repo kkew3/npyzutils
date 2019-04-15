@@ -76,8 +76,10 @@ FIELDS_SPEC format
                              'note that this function may break in the future '
                              'as it uses potentiall unstable API of numpy ('
                              'accessing protected attributes)')
-    parser.add_argument('fields_spec', metavar='FIELD_SPEC', type=fields_spec,
-                        help='fields specification string')
+    parser.add_argument('-c', '--fields-spec', metavar='FIELD_SPEC',
+                        type=fields_spec, default='kS',
+                        help='fields specification string; default to `'
+                             '%(default)s\'')
     parser.add_argument('npyzfiles', metavar='NPYZFILE', nargs='*',
                         help='the npy/npz file(s) to inspect shapes')
     return parser
