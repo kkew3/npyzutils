@@ -3,6 +3,8 @@ import argparse
 import sys
 import os
 import re
+import io
+import shutil
 import itertools
 import typing
 import logging
@@ -62,9 +64,13 @@ def channel_order(string: str) -> str:
     return string
 
 
+stdout = object()
+
+
 def make_parser():
     parser = ArgumentParser(
-        description='Make image(s) from npy/npz file')
+        description='Make image(s) from npy/npz file. Use `--\' to mark the '
+                    'beginning of NPYZFILEs if necessary.')
     parser.add_argument('npyzfile', metavar='NPYZFILE', type=os.path.normpath,
                         help='the npy/npz file from which to render image(s)')
     dtypeopts = parser.add_argument_group('data type options')
@@ -116,10 +122,14 @@ def make_parser():
                          help='cmap to use if underlying images are '
                               'grayscale. Default to %(default)s')
     outopts = parser.add_argument_group('output options')
-    outopts.add_argument('-o', '--tofile', type=os.path.normpath,
+    outopts.add_argument('-o', '--tofile', type=os.path.normpath, nargs='?',
+                         const=stdout,
                          help='write to TOFILE; if there are multiple images '
                               'to render, the behavior will be up to the '
-                              'presence of option `--overwrite\'')
+                              'presence of option `--overwrite\'. If TOFILE '
+                              'is left empty, TOFILE will be set to stdout, '
+                              'and only the first image will be sent to '
+                              'stdout')
     outopts.add_argument('-d', '--todir', type=os.path.normpath,
                          default=os.getcwd(),
                          help='write to files under existing TODIR; the files'
@@ -320,9 +330,36 @@ def write_image(image_source, tofile: str, output_format: typing.Optional[str],
         render_kwargs['cmap'] = cmap
 
     for _, img in image_source:
-        if not overwrite and os.path.isfile(tofile):
-            raise FileExistsError(tofile)
+        if os.path.isfile(tofile):
+            if not overwrite:
+                raise FileExistsError(tofile)
+            logging.warning('overwriting existing file "%s"', tofile)
         plt.imsave(tofile, img, **render_kwargs)
+
+
+def write_image_stdout(image_source, output_format: typing.Optional[str],
+                       cmap: str, ends_with_c: bool) -> None:
+    render_kwargs = {'format': output_format or 'png'}
+    if not ends_with_c and cmap:
+        render_kwargs['cmap'] = cmap
+
+    image_source = iter(image_source)
+    try:
+        _, img = next(image_source)
+        with io.BytesIO() as cbuf:
+            plt.imsave(cbuf, img, **render_kwargs)
+            cbuf.seek(0)
+            shutil.copyfileobj(cbuf, sys.stdout.buffer)
+    except StopIteration:
+        return
+
+    try:
+        _, img = next(image_source)
+    except StopIteration:
+        pass
+    else:
+        logging.warning('more than one image to write but can only write the '
+                        'first one to stdout')
 
 
 def main():
@@ -373,7 +410,10 @@ def main():
             return ERROR_DATA
 
     image_source = render_images(subdata, ends_with_c)
-    if args.tofile is not None:
+    if args.tofile is stdout:
+        write_image_stdout(image_source, args.output_format, args.cmap,
+                           ends_with_c)
+    elif args.tofile is not None:
         try:
             write_image(image_source, args.tofile, args.output_format,
                         args.cmap, ends_with_c, args.overwrite)
