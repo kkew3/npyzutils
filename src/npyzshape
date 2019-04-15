@@ -1,146 +1,188 @@
 #!/usr/bin/env python3
 import sys
 import logging
+import zipfile
+import io
 import argparse
+import typing
 
 lformat = '%(filename)s: %(levelname)s: %(message)s'
 logging.basicConfig(format=lformat)
 
 import numpy as np
+import numpy.lib.format as npf
 
-
+ERROR_ARGS = 1
 ERROR_LOADFILE = 2
 ERROR_KEYBOARD = 130
 
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        self.exit(1, '%s: error: %s\n' % (self.prog, message))
+        self.exit(ERROR_ARGS, '%s: error: %s\n' % (self.prog, message))
 
 
 def delimiter(string):
     if '\n' in string or '\r' in string:
         raise argparse.ArgumentTypeError
+    return string.replace(r'\t', '\t').replace(r'\0', chr(0))
 
-    return {
-        r'\t': '\t',
-        r'\0': '\x00',
-    }.get(string, string)
+
+def fields_spec(string) -> typing.List[str]:
+    fields = []
+    canonical_fields = set()
+    candidates = 'fkKsSt'
+    for c in string:
+        if c not in candidates:
+            raise argparse.ArgumentTypeError(
+                'Illegal character `{}\' in FIELDS_SPEC "{}"'
+                    .format(c, string))
+        if c in canonical_fields:
+            raise argparse.ArgumentTypeError(
+                'Duplicate field specifier `{}\' in FIELDS_SPEC "{}"'
+                    .format(c, string))
+        fields.append(c)
+        canonical_fields.add(c.lower())
+    return fields
 
 
 def make_parser():
     parser = ArgumentParser(
-        description='Print array shape. If the input file is an npy file, '
-                    'the output will be a comma-separated list of integers, '
-                    'signifying the dimension along each axis; if the input '
-                    'file is an npz file, each line of the output will be '
-                    '"${keyname}${DELIM}${comma-separated-list-of-'
-                    'dimensions}".')
-    # Reading from stdin is too complicated ... See:
-    # - https://stackoverflow.com/q/11305790/7881370
-    # - https://stackoverflow.com/q/14283025/7881370
-    parser.add_argument('npyzfiles', metavar='NPYZFILE', nargs='*',
-                        help='the npy/npz file to inspect shapes; if none is '
-                             'found, a list of filenames will be expected '
-                             'on stdin, one per line')
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='''\
+Display array metainfo like shape in numpy npy/npz files. Reading array from
+stdin is not supported unless `--reading-header' option is used.
+
+FIELDS_SPEC format
+
+    A sequence of unique single-character field specifier.
+    List of field specifiers:
+
+        f      npy/npz filename
+        k, K   npz key; if the underlying file is an npy file, empty string is
+               displayed if using `k', otherwise "<na>"
+        s, S   comma-separated list of shape; if the underlying data is a
+               scalar, empty string is displayed if using `s', otherwie
+               "<scalar>"
+        t      the array dtype
+''')
     parser.add_argument('-d', '--field-delimiter', dest='delim',
                         metavar='DELIM', default=':', type=delimiter,
                         help=r"DELIM with `\t', `\0' supported; "
                              r"`\n', `\r' are not allowd. Default to colon")
-    parser.add_argument('-F', '--show-filename', dest='show_filename',
-                        metavar='SHOW_FILENAME_POLICY',
-                        choices=('auto', 'never', 'always'),
-                        default='auto',
-                        help='if filename is shown, the output on each line '
-                             'will be filename, [keyname,] '
-                             'comma-separated-list-of-dimensions separated '
-                             'by DELIM. When `auto\', filename is shown when '
-                             'there are multiple NPYZFILEs. Default to '
-                             '`auto\'')
-    parser.add_argument('-T', '--show-dtype', dest='show_dtype',
-                        action='store_true',
-                        help='show dtype after the shape, separated by '
-                             'DELIM')
-    parser.add_argument('-K', '--key-only', dest='key_only',
-                        action='store_true',
-                        help='if enabled, for npy files, nothing will be '
-                             'shown; for npz file, only the key names will '
-                             'be printed. This option makes the program '
-                             'faster as there\'d be no need to actually read '
-                             'arrays into memory')
+    parser.add_argument('-H', '--reading-header', action='store_true',
+                        help='decide the metainfo by reading the header; '
+                             'despite much faster and memory-saving, please '
+                             'note that this function may break in the future '
+                             'as it uses potentiall unstable API of numpy ('
+                             'accessing protected attributes)')
+    parser.add_argument('fields_spec', metavar='FIELD_SPEC', type=fields_spec,
+                        help='fields specification string')
+    parser.add_argument('npyzfiles', metavar='NPYZFILE', nargs='*',
+                        help='the npy/npz file(s) to inspect shapes')
     return parser
 
 
-def show_shape(array):
-    if array.shape:
-        sbuf = ','.join(map(str, array.shape))
-    else:
-        sbuf = '<scalar>'
-    return sbuf
+class NotNpyFileError(Exception):
+    pass
 
 
-def inspect_npyzshape(filename: str, delim: str, show_dtype: bool,
-                      show_filename: bool, key_only: bool):
-    data = np.load(filename)
-    lines = []
+def populate_result_dict(data: np.ndarray, fields: typing.Sequence[str]):
+    d = {
+        's': ','.join(map(str, data.shape)),
+        'S': ','.join(map(str, data.shape)) or '<scalar>',
+        't': str(data.dtype),
+    }
+    return {f: d[f] for f in fields if f in d}
+
+
+def display_result(fields: typing.Sequence[str], delim: str,
+                   result_dict: typing.Dict[str, str]) -> None:
+    print(delim.join([''.join(('{', f, '}')).format(**result_dict)
+                      for f in fields]))
+
+
+def inspect_npyshape(fp: typing.BinaryIO, fields: typing.Sequence[str]) \
+        -> typing.Dict[str, str]:
+    """
+    :raise NotNpyFileError: if ``fp`` is not an npy file handler
+    """
     try:
-        keys = data.keys()
+        return populate_result_dict(None, fields)
     except AttributeError:
-        tokens = []
-        if not key_only:
-            tokens.append(show_shape(data))
-        if show_filename:
-            tokens.insert(0, filename)
-        if show_dtype:
-            tokens.append(str(data.dtype))
-        lines.append(delim.join(tokens))
-    else:
         try:
-            for k in data.keys():
-                tokens = [k]
-                d = data[k]
-                if not key_only:
-                    tokens.append(show_shape(d))
-                if show_filename:
-                    tokens.insert(0, filename)
-                if show_dtype:
-                    tokens.append(str(d.dtype))
-                lines.append(delim.join(tokens))
-        finally:
-            data.close()
-    return lines
+            return populate_result_dict(np.load(fp), fields)
+        except OSError as err:
+            raise NotNpyFileError from err
+    except OSError as err:
+        raise NotNpyFileError from err
+
+
+def inspect_npyshape_h(fp: typing.BinaryIO, *args) -> typing.Dict[str, str]:
+    """
+    :raise NotNpyFileError:: if ``fp`` is not an npy file handler
+    """
+    try:
+        ver = npf.read_magic(fp)
+    except ValueError as err:
+        raise NotNpyFileError from err
+    else:
+        shape, _, dtype = npf._read_array_header(fp, ver)
+    return {
+        's': ','.join(map(str, shape)),
+        'S': ','.join(map(str, shape)) or '<scalar>',
+        't': str(dtype),
+    }
+
+
+def inspect_file(filename: str, fields: typing.Sequence[str],
+                 delim: str, reading_header: bool) -> int:
+    if reading_header:
+        inspect_npyshape_ = inspect_npyshape_h
+    else:
+        inspect_npyshape_ = inspect_npyshape
+    retcode = 0
+    try:
+        zipfile.ZipFile(filename).close()
+        with np.load(filename) as zfile:
+            for name in zfile:
+                try:
+                    if set('sSt') & set(fields):
+                        data = zfile[name]
+                        rd = populate_result_dict(data, fields)
+                    else:
+                        rd = {}
+                    rd.update(f=filename, k=name, K=name)
+                    display_result(fields, delim, rd)
+                except AttributeError:
+                    logging.error('failed to inspect key "%s" in npz '
+                                  'file "%s"', name, filename)
+    except zipfile.BadZipFile:
+        with open(filename, 'rb') as infile:
+            try:
+                rd = inspect_npyshape_(infile, fields)
+                rd.update(f=filename, k='', K='<na>')
+                display_result(fields, delim, rd)
+            except NotNpyFileError:
+                logging.error('failed to load "%s" as npy file', filename)
+                retcode |= ERROR_LOADFILE
+    except OSError:
+        logging.error('failed to load "%s" as npz file', filename)
+        retcode |= ERROR_LOADFILE
+    return retcode
 
 
 def main():
     retcode = 0
     try:
         args = make_parser().parse_args()
-        if args.npyzfiles:
-            npyzfiles = args.npyzfiles
-        else:
-            npyzfiles = [x.rstrip('\n') for x in sys.stdin]
-        show_filename = args.show_filename
-        more_than_one_files = (len(npyzfiles) > 1)
-        if show_filename == 'auto':
-            show_filename = 'always' if more_than_one_files else 'never'
-        show_filename = {
-            'always': True,
-            'never': False,
-        }[show_filename]
-
-        for filename in npyzfiles:
-            try:
-                lines = inspect_npyzshape(filename, args.delim, show_filename,
-                                          args.show_dtype, args.key_only)
-                print('\n'.join(lines))
-            except OSError:
-                retcode |= ERROR_LOADFILE
-                logging.warning('Failed to load {}'.format(filename))
-        return retcode
+        for filename in args.npyzfiles:
+            retcode |= inspect_file(filename, args.fields_spec, args.delim,
+                                    args.reading_header)
     except KeyboardInterrupt:
         retcode |= ERROR_KEYBOARD
-        return retcode
+    sys.exit(retcode)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
