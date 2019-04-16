@@ -426,7 +426,7 @@ def main():
             return ERROR_ARGS
         try:
             write_images(image_source, args.todir, args.output_format,
-                         args.cmap, ends_with_c, is_npy, args.key,
+                         args.cmap, ends_with_c, is_npy, args.key or '',
                          args.out_template, args.overwrite)
         except FileExistsError as err:
             logging.warning('file "%s" already exists; aborted', err.args[0])
