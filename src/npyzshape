@@ -99,7 +99,7 @@ def populate_result_dict(data: np.ndarray, fields: typing.Sequence[str]):
 def display_result(fields: typing.Sequence[str], delim: str,
                    result_dict: typing.Dict[str, str]) -> None:
     print(delim.join([''.join(('{', f, '}')).format(**result_dict)
-                      for f in fields]))
+                      for f in fields]), flush=True)
 
 
 def inspect_npyshape(fp: typing.BinaryIO, fields: typing.Sequence[str]) \
@@ -118,7 +118,7 @@ def inspect_npyshape(fp: typing.BinaryIO, fields: typing.Sequence[str]) \
         raise NotNpyFileError from err
 
 
-def inspect_npyshape_h(fp: typing.BinaryIO, *args) -> typing.Dict[str, str]:
+def inspect_npyshape_h(fp: typing.BinaryIO, *_args) -> typing.Dict[str, str]:
     """
     :raise NotNpyFileError:: if ``fp`` is not an npy file handler
     """
@@ -166,6 +166,8 @@ def inspect_file(filename: str, fields: typing.Sequence[str],
             except NotNpyFileError:
                 logging.error('failed to load "%s" as npy file', filename)
                 retcode |= ERROR_LOADFILE
+    except BrokenPipeError:
+        pass
     except OSError:
         logging.error('failed to load "%s" as npz file', filename)
         retcode |= ERROR_LOADFILE
@@ -179,8 +181,9 @@ def main():
         for filename in args.npyzfiles:
             retcode |= inspect_file(filename, args.fields_spec, args.delim,
                                     args.reading_header)
-    except (KeyboardInterrupt, BrokenPipeError):
+    except KeyboardInterrupt:
         pass
+    sys.stderr.close()
     sys.exit(retcode)
 
 
