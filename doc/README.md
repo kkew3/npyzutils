@@ -199,52 +199,6 @@ optional arguments:
                         `--bundle-npy'
 ```
 
-# npz2npy
-```
-usage: npz2npy [-h] [-k KEY] [-S] [-E] [-n] [-o TOFILE] [-O TOFILE_TEMPLATE]
-               [-F FORCE_TEMPLATE]
-               [NPZFILE [NPZFILE ...]]
-
-Convert a specific key in npz file to a single npyfile.
-
-positional arguments:
-  NPZFILE               if nothing is specified, a list of filenames, one per
-                        line, is expected at stdin. If `-o' was specified, all
-                        NPZFILE but the first one will be ignored
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -k KEY, --key KEY     key to extract; this option is not required if there's
-                        only one key in the npz file
-  -S, --strict          abort the program if one of the NPZFILEs cannot be
-                        loaded; note that even without this option, KeyError
-                        won't be suppressed
-  -E, --write-empty     if specified, an empty file will be written on
-                        KeyError
-  -n, --print-name      print output file names one per line
-
-output file options:
-  Only one of the `-o' and `-O' should be specified. Both options require
-  non-empty argument.
-
-  -o TOFILE, --tofile TOFILE
-                        output file; if this option is specified, at most one
-                        npz file can be specified as NPZFILE
-  -O TOFILE_TEMPLATE, --tofile-template TOFILE_TEMPLATE
-                        output file `str.format` template; if this option is
-                        specified, the output file will be named to
-                        `TOFILE_TEMPLATE.format(NPZFILE, KEY)`.
-                        TOFILE_TEMPLATE normally should leave placeholders for
-                        both NPZFILE and KEY so as not to trigger error. See
-                        also option `-f'. When neither `-o' nor `-O' is
-                        specified, `-O "{0}_{1}.npy"' is the default behavior
-  -F FORCE_TEMPLATE     if not specified, the template string in `-O' must
-                        have two placeholders; if specified as `-F', it must
-                        have the first placeholder; if specified as `-FF...'
-                        (two or more `F's, no requirement is applied on the
-                        template string
-```
-
 # npzcat
 ```
 usage: npzcat [-h] [-s] [-d DIM] [-o TOFILE] [-S] [-k KEYS [KEYS ...]] [-n]
