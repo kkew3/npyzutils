@@ -2,7 +2,6 @@
 import sys
 import logging
 import zipfile
-import io
 import argparse
 import typing
 
@@ -14,7 +13,6 @@ import numpy.lib.format as npf
 
 ERROR_ARGS = 1
 ERROR_LOADFILE = 2
-ERROR_KEYBOARD = 130
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -181,8 +179,8 @@ def main():
         for filename in args.npyzfiles:
             retcode |= inspect_file(filename, args.fields_spec, args.delim,
                                     args.reading_header)
-    except KeyboardInterrupt:
-        retcode |= ERROR_KEYBOARD
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
     sys.exit(retcode)
 
 
