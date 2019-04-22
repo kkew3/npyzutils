@@ -98,8 +98,9 @@ def populate_result_dict(data: np.ndarray, fields: typing.Sequence[str]):
 
 def display_result(fields: typing.Sequence[str], delim: str,
                    result_dict: typing.Dict[str, str]) -> None:
+    # Reference: https://stackoverflow.com/a/1077118/7881370
     print(delim.join([''.join(('{', f, '}')).format(**result_dict)
-                      for f in fields]), flush=True)
+                      for f in fields]), flush=not sys.stdout.isatty())
 
 
 def inspect_npyshape(fp: typing.BinaryIO, fields: typing.Sequence[str]) \
