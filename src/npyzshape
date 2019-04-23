@@ -87,7 +87,8 @@ class NotNpyFileError(Exception):
     pass
 
 
-def populate_result_dict(data: np.ndarray, fields: typing.Sequence[str]):
+def populate_result_dict(data: typing.Optional[np.ndarray],
+                         fields: typing.Sequence[str]):
     d = {
         's': ','.join(map(str, data.shape)),
         'S': ','.join(map(str, data.shape)) or '<scalar>',
