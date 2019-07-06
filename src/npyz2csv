@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+import collections
+import argparse
+import sys
+import os
+import tempfile
+from typing import Dict, Tuple, List, Sequence
+
+import numpy as np
+
+
+class MissingValueError(ValueError):
+    pass
+
+
+def align_tbl(tbl: np.ndarray, arr: np.ndarray,
+              fill_missing=True,
+              fv=np.nan) -> np.ndarray:
+    """
+    :param tbl: 2D numpy array with each row as one column of the table
+    :param arr: nD numpy array (n <=2) to be appended to ``tbl``
+    :param fill_missing: True to fill missing values with ``fv``
+    :param fv: value to fill as missing values
+
+    Note the dtype changes in the fourth test case below.
+
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.empty((0, 0)), np.array(4)),
+    ... np.array([[4]]))
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.empty((0, 0)), np.array([1,2,3])),
+    ... np.array([[1,2,3]]))
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.empty((0, 0)), np.array([[1,2,3],[2,3,4]])),
+    ... np.array([[1,2,3],[2,3,4]]))
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.array([[1,2,3,4]]), np.array([[2,3,4],[3,4,5]])),
+    ... np.array([[1,2,3,4,2,3,4],[np.nan,np.nan,np.nan,np.nan,3,4,5]]))
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.array([[1,2],[2,3]]), np.array(9)),
+    ... np.array([[1,2,9],[2,3,np.nan]]))
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.array([[1,2,3],[2,3,4],[3,4,5],[4,5,6]]), np.empty(0)),
+    ... np.array([[1,2,3],[2,3,4],[3,4,5],[4,5,6]]))
+    >>> np.testing.assert_equal(
+    ... align_tbl(np.array([[1,2,3],[2,3,4]]), np.array([[9,8]])),
+    ... np.array([[1,2,3,9,8],[2,3,4,np.nan,np.nan]]))
+    """
+    tbl = np.array(tbl)
+    if len(tbl.shape) != 2 and tbl.size > 0:
+        raise ValueError('`tbl` must be a 2D array, but got {}D array'
+                         .format(len(tbl.shape)))
+    arr = np.array(arr)
+    if len(arr.shape) > 2:
+        raise ValueError('`arr` must be at most a 2D array, but got {}D array'
+                         .format(len(arr.shape)))
+
+    if arr.size == 0:
+        return tbl
+    elif len(arr.shape) == 0:
+        arr = arr.reshape((1, 1))
+    elif len(arr.shape) == 1:
+        arr = arr.reshape((1, -1))
+
+    if tbl.size == 0:
+        return arr
+
+    if tbl.shape[0] != arr.shape[0] and not fill_missing:
+        raise MissingValueError('Missing value exists when concatenating '
+                                '`tbl` and `arr`')
+    if tbl.shape[0] < arr.shape[0]:
+        m = fv * np.ones((arr.shape[0] - tbl.shape[0], tbl.shape[1]),
+                         dtype=arr.dtype)
+        tbl = np.concatenate((tbl, m), axis=0)
+    elif tbl.shape[0] > arr.shape[0]:
+        m = fv * np.ones((tbl.shape[0] - arr.shape[0], arr.shape[1]),
+                         dtype=arr.dtype)
+        arr = np.concatenate((arr, m), axis=0)
+    tbl = np.concatenate((tbl, arr), axis=1)
+    return tbl
+
+
+def ensure_1darray(v):
+    v = np.array(v)
+    if len(v.shape) <= 1:
+        v = v.reshape(-1)
+    else:
+        raise ValueError('Value of `v` must be at most 1D array, but got {}D '
+                         'array'.format(len(v.shape)))
+    return v
+
+
+def npzdict2array(npzdict: Dict[str, np.ndarray], fields: Sequence[str],
+                  fill_missing=True,
+                  fv=np.nan) -> Tuple[np.ndarray, List[str]]:
+    """
+    >>> a, f = npzdict2array({}, ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.empty((0, 0)))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array([1,2])}, ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.array([[np.nan,np.nan],[1,2]]))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array(1)}, ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.array([[np.nan], [1]]))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array([1,2,3]),
+    ...                       'b': np.array([2,3,4])},
+    ...                      ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.array([[2,3,4],[1,2,3]]))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array([1,2,3])}, ['b','a'])
+    >>> np.testing.assert_equal(a, np.array([[np.nan,np.nan,np.nan],[1,2,3]]))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array([1,2,3]),
+    ...                       'b': np.array([2])},
+    ...                      ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.array([[2,np.nan,np.nan],[1,2,3]]))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array([1,2,3]),
+    ...                       'b': np.array(2)},
+    ...                      ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.array([[2,np.nan,np.nan],[1,2,3]]))
+    >>> f
+    ['b', 'a']
+    >>> a, f = npzdict2array({'a': np.array([1,2,3]),
+    ...                       'b': np.array([2,3,4]),
+    ...                       'c': np.array([3])},
+    ...                      ['b', 'a'])
+    >>> np.testing.assert_equal(a, np.array([[2,3,4],[1,2,3],[3,np.nan,np.nan]]))
+    >>> f
+    ['b', 'a', 'c']
+    """
+    if not len(npzdict):
+        return np.empty((0, 0), dtype=np.uint8), fields
+
+    npzdata = []
+    unvisited_fields = set(npzdict.keys())
+    for k in fields:
+        if k in npzdict:
+            v = ensure_1darray(npzdict[k])
+            unvisited_fields.remove(k)
+        else:
+            v = np.array([], dtype=np.uint8)
+        npzdata.append((k, v))
+    for k in unvisited_fields:
+        v = ensure_1darray(npzdict[k])
+        npzdata.append((k, v))
+    fields = [k for k, _ in npzdata]
+    lens = [v.shape[0] for _, v in npzdata]
+    if min(lens) < max(lens) and not fill_missing:
+        raise MissingValueError('Missing value exists among keys')
+    for j, (k, v) in enumerate(npzdata):
+        m = fv * np.ones(max(lens) - v.shape[0], dtype=v.dtype)
+        npzdata[j] = (k, np.concatenate((v, m)))
+    arr = np.stack([v for _, v in npzdata])
+    return arr, fields
+
+
+class NpyzTable(object):
+    def __init__(self, fill_missing=True, fv=np.nan):
+        self.fields = []
+        self.data = np.empty((0, 0), dtype=np.uint8)
+        self.fill_missing = fill_missing
+        self.fv = fv
+
+        # backend kwargs for convenience
+        self._bkw = {
+            'fill_missing': self.fill_missing,
+            'fv': self.fv,
+        }
+
+    def __getitem__(self, item):
+        i = self.fields.index(item)
+        return self.data[i]
+
+    def keys(self):
+        return self.fields
+
+    def values(self):
+        return list(self.data)
+
+    def items(self):
+        return zip(self.fields, list(self.data))
+
+
+def write_csv(tbl: NpyzTable):
+    """
+    Write as CSV.
+    """
+    print(','.join(map(str, tbl.fields)))
+    for j in range(tbl.data.shape[1]):
+        print(','.join(map(str, tbl.data[:, j])))
+
+
+class IncompatibleFormatError(ValueError):
+    pass
+
+
+class NpzTable(NpyzTable):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def append(self, data):
+        """
+        :param data: as returned by ``numpy.load``
+        """
+        try:
+            _ = dict(data)
+        except:
+            raise IncompatibleFormatError('Expecting npz data but failed to '
+                                          'convert `data` to dict')
+
+        data, self.fields = npzdict2array(data, self.fields, **self._bkw)
+        self.data = align_tbl(self.data, data, **self._bkw)
+
+
+class NpyTable(NpyzTable):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def append(self, data):
+        """
+        :param data: as returned by ``numpy.load``
+        """
+        try:
+            _ = np.array(data, dtype=np.float64)
+        except:
+            raise IncompatibleFormatError('Expecting npy data but failed to '
+                                          'convert `data` to array')
+
+        self.data = align_tbl(self.data, data, **self._bkw)
+        self.fields = list(range(self.data.shape[0]))
+
+
+class NotCommonDirectoryError(RuntimeError):
+    def __init__(self, dirs):
+        self.dirs = dirs
+
+
+def make_parser():
+    parser = argparse.ArgumentParser(
+        description='Parse npy/npz files from stdin into one CSV file. '
+                    'The npy/npz filenames are to be read from stdin. The '
+                    'data are concatenated along axis-0 in the order as '
+                    'the filenames.',
+        epilog='This is the CLI version of npyz2csv workflow. The workflow '
+               'version is named `npyz2csv_wf.py\'')
+    parser.add_argument('-V', '--default-value', dest='default_value',
+                        type=float,
+                        help='default value to fill CSV; default to np.nan')
+    return parser
+
+
+def write_csv_from_npyzfiles(srcfiles):
+    try:
+        tab = NpyTable()
+        for filename in srcfiles:
+            data = np.load(filename)
+            tab.append(data)
+    except IncompatibleFormatError:
+        tab = NpzTable()
+        for filename in srcfiles:
+            data = np.load(filename)
+            tab.append(data)
+    write_csv(tab)
+
+
+def main():
+    args = make_parser().parse_args()
+    try:
+        srcfiles = list(map(os.path.normpath, map(str.strip, sys.stdin)))
+        write_csv_from_npyzfiles(srcfiles)
+    except KeyboardInterrupt:
+        pass
+    except BrokenPipeError:
+        sys.stderr.close()
+
+
+if __name__ == '__main__':
+    main()

@@ -11,6 +11,7 @@ A collection of command line utilities to manipulate `npy` or `npz` files.
            or re-compress `npz` file
 - `npyz2img`: display data of `npy` file or `npz` file as image(s), supporting
               advanced indexing
+- `npyz2csv`: convert 2D data into CSV format and write to stdout
 
 Will add more as needed.
 
