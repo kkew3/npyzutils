@@ -1,109 +1,217 @@
 #!/usr/bin/env python3
 import sys
+import io
+import shutil
 import argparse
 import logging
 
 import numpy as np
 
-logging.basicConfig(format='%(filename)s: %(levelname)s: %(message)s')
+ERRNO_ARGS = 1
+ERRNO_READ = 2
+ERRNO_DATA = 4
+ERRNO_WRITE = 8
+
+errno = 0
+
+LOGGING_LEVEL = logging.WARNING
 
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        self.exit(1, '%s: error: %s\n' % (self.prog, message))
+        self.print_usage(sys.stderr)
+        args = {'prog': self.prog, 'message': message}
+        self.exit(ERRNO_ARGS, '{prog}: error: {message}\n'.format(**args))
 
 
 def make_parser():
     parser = ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description='''\
-Concatenate or stack several npy files to one npy file.
-
-Return code:
-
-    0    success
-    1    argument parsing error
-    2    failed to load one or more npy files
-    4    arrays have inconsistent dimension
-    8    failed to write result to file
-''')
-    parser.add_argument('-s', '--stack', action='store_true',
-                        help='stack arrays rather than concatenate them')
-    parser.add_argument('-d', '--dim', type=int, default=0,
-                        help='the dimension to concatenate/stack, default '
-                             'to %(default)s')
-    parser.add_argument('-o', '--tofile',
-                        help='the npy file to write; if not specified, the '
-                             'binary result will be written to stdout, which '
-                             'is generally not recommended')
-    parser.add_argument('-t', '--textwrite',
-                        choices=('always', 'auto', 'never'),
-                        default='auto',
-                        help='when "auto", write in text mode only if the '
-                             'output device is stdout, default to '
-                             '%(default)s')
-    parser.add_argument('-S', '--strict', action='store_true',
-                        help='fail immediately if a numpy file cannot be '
-                             'loaded')
-    parser.add_argument('npyfiles', nargs='*',
-                        help='npyfiles to concatenate; if not provided '
-                             'anything, a list of npy filenames will be '
-                             'expected at stdin, one per line')
+        description='Concatenate or stack several npy files to one npy file.')
+    parser.add_argument(
+        '-s',
+        '--stack',
+        action='store_true',
+        help='stack arrays rather than concatenate them')
+    parser.add_argument(
+        '-d',
+        '--dim',
+        type=int,
+        default=0,
+        help=('the dimension to concatenate/stack, default '
+              'to %(default)s'))
+    parser.add_argument(
+        '-O',
+        '--output',
+        metavar='OUTFILE',
+        help=('the result will be written to OUTFILE. If '
+              'not specified, the raw bytes of the result '
+              'array (or text if `-H\' is given) will be '
+              'written to stdout'))
+    parser.add_argument(
+        '-H',
+        '--human-readable',
+        dest='textwrite',
+        action='store_true',
+        help=('write to OUTFILE in text mode. Note that '
+              'error occurs if the underlying array is more '
+              'than 2D'))
+    parser.add_argument(
+        '-T',
+        '--from-file',
+        dest='from_file',
+        metavar='FILE',
+        help=('read filenames to concatenate/stack from FILE; use `-\' '
+              'to denote stdin. In either case the filenames '
+              'should be placed one per line'))
+    parser.add_argument(
+        'npyfiles',
+        nargs='*',
+        metavar='NPYFILE',
+        help=('the npy files to concatenate/stack. '
+              'If none is given here and if `-T\' is provided, then '
+              'the NPYFILEs will be obtained from FILE. '
+              'If neither NPYFILE nor `-T\' is provided, then '
+              'raw bytes of an npy file will be expected from stdin. '
+              'If both NPYFILE and `-T\' are provided, then '
+              'the union of them will be used.'))
     return parser
 
 
-def no_trailing_newline(s):
-    if s.endswith('\n'):
-        s = s[:-1]
-    return s
+def decide_input_files(args):
+    global errno
+    filenames = []
+    if args.from_file == '-':
+        filenames.extend(x.rstrip('\n') for x in sys.stdin)
+        if not filenames and not args.npyfiles:
+            logging.info('nothing to load; aborted')
+            sys.exit(errno)
+    elif args.from_file:
+        try:
+            with open(args.from_file) as infile:
+                filenames.extend(x.rstrip('\n') for x in infile)
+        except OSError as err:
+            logging.warning('failed to load NPYFILEs from "%s" due to %s',
+                            args.from_file, err)
+            errno |= ERRNO_READ
+        if not filenames and not args.npyfiles:
+            logging.info('nothing to load; aborted')
+            sys.exit(errno)
+    if args.npyfiles:
+        filenames.extend(args.npyfiles)
+    return filenames or None
+
+
+def read_data(filenames):
+    all_data = []
+    if filenames:
+        for filename in filenames:
+            try:
+                data = np.load(filename)
+            except OSError as err:
+                logging.error('failed to load "%s" due to %s', filename, err)
+                sys.exit(errno | ERRNO_READ)
+            if hasattr(data, 'keys'):
+                data.close()
+                logging.error('failed to load "%s" as npy file', filename)
+                sys.exit(errno | ERRNO_READ)
+            logging.debug('loaded data of shape %s from "%s"', data.shape,
+                          filename)
+            all_data.append(data)
+    else:
+        with io.BytesIO() as cbuf:
+            shutil.copyfileobj(sys.stdin.buffer, cbuf)
+            cbuf.seek(0)
+            try:
+                data = np.load(cbuf)
+            except OSError as err:
+                logging.error('failed to load from "/dev/stdin" due to %s',
+                              err)
+                sys.exit(errno | ERRNO_READ)
+            if hasattr(data, 'keys'):
+                data.close()
+                logging.error('failed to load "/dev/stdin" as npy file')
+                sys.exit(errno | ERRNO_READ)
+            logging.debug('loaded data of shape %s from "/dev/stdin"',
+                          data.shape)
+            all_data.append(data)
+    return all_data
+
+
+def merge_data(args, all_data):
+    if len(all_data) > 1:
+        merge = np.stack if args.stack else np.concatenate
+        try:
+            result = merge(all_data, axis=args.dim)
+        except ValueError as err:
+            logging.error('failed to %s arrays due to %s',
+                          'stack' if args.stack else 'concatenate', err)
+            sys.exit(errno | ERRNO_DATA)
+    else:
+        result = all_data[0]
+    logging.debug('result shape = %s', result.shape)
+    return result
+
+
+def write_data(args, result):
+    if args.output:
+        if args.textwrite:
+            try:
+                with open(args.output, 'w') as outfile:
+                    np.savetxt(outfile, result)
+            except (OSError, ValueError) as err:
+                logging.error('failed to write result to "%s" due to %s',
+                              args.output, err)
+                sys.exit(errno | ERRNO_WRITE)
+            logging.info('written result to "%s"', args.output)
+        else:
+            try:
+                with open(args.output, 'wb') as outfile:
+                    np.save(outfile, result)
+            except OSError as err:
+                logging.error('failed to write result to "%s" due to %s',
+                              args.output, err)
+                sys.exit(errno | ERRNO_WRITE)
+            logging.info('written result to "%s"', args.output)
+    else:
+        if args.textwrite:
+            with io.StringIO() as cbuf:
+                try:
+                    np.savetxt(cbuf, result)
+                except (OSError, ValueError) as err:
+                    logging.error(
+                        'failed to write result to "/dev/stdout" '
+                        'due to %s', err)
+                    sys.exit(errno | ERRNO_WRITE)
+                cbuf.seek(0)
+                shutil.copyfileobj(cbuf, sys.stdout)
+                logging.info('written result to "/dev/stdout"')
+        else:
+            with io.BytesIO() as cbuf:
+                np.save(cbuf, result)
+                cbuf.seek(0)
+                shutil.copyfileobj(cbuf, sys.stdout.buffer)
+            logging.info('written result to "/dev/stdout"')
 
 
 def main():
+    logging.basicConfig(
+        format='%(filename)s: %(levelname)s: %(message)s', level=LOGGING_LEVEL)
     args = make_parser().parse_args()
-    if args.npyfiles:
-        npyfiles = args.npyfiles
-    else:
-        npyfiles = list(map(no_trailing_newline, sys.stdin))
-    all_data = []
-    for filename in npyfiles:
-        try:
-            data = np.load(filename)
-        except OSError:
-            logging.warning('Failed to load "%s"', filename)
-            if args.strict:
-                sys.exit(2)
-        else:
-            all_data.append(data)
-
-    merge = np.stack if args.stack else np.concatenate
-    try:
-        result = merge(all_data, axis=args.dim)
-    except ValueError as e:
-        logging.error(str(e))
-        sys.exit(4)
-
-    if args.textwrite == 'always':
-        save = np.savetxt
-    elif args.textwrite == 'never':
-        save = np.save
-    elif args.tofile:
-        save = np.save
-    else:
-        save = np.savetxt
-
-    if args.tofile:
-        try:
-            with open(args.tofile, 'wb') as outfile:
-                save(outfile, result)
-        except OSError:
-            logging.error('Failed to write result to "%s"', args.tofile)
-            sys.exit(8)
-    else:
-        save(sys.stdout, result)
+    filenames = decide_input_files(args)
+    logging.debug('input filenames = %s', filenames or '/dev/stdin')
+    all_data = read_data(filenames)
+    if not all_data:
+        logging.debug('loaded nothing; aborted')
+        return
+    result = merge_data(args, all_data)
+    write_data(args, result)
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (BrokenPipeError, KeyboardInterrupt):
-        sys.exit(130)
+    except (KeyboardInterrupt, BrokenPipeError):
+        logging.warning('written data may have corrupted due to interrupt')
+        errno |= ERRNO_WRITE
+    finally:
+        sys.exit(errno)
