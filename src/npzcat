@@ -64,6 +64,12 @@ def make_parser():
               'error occurs if any underlying array is more '
               'then 2D'))
     parser.add_argument(
+        '--csv',
+        action='store_true',
+        help=('arrange the output in CSV with field names '
+              'equal to the key names; effective only if '
+              '`-H\' is specified'))
+    parser.add_argument(
         '-T',
         '--from-file',
         dest='from_file',
@@ -196,25 +202,79 @@ def merge_data(args, all_data):
 def write_data(args, result):
     if args.output:
         if args.textwrite:
-            for i, k in enumerate(result):
+            if args.csv:
+                csv_rows = None
+                for k in result:
+                    if not result[k].shape:
+                        result[k] = np.array([result[k]])
+                    elif len(result[k].shape) > 1:
+                        logging.warning(
+                            'array of key "%s" is more '
+                            'than 1D, trying squeezing '
+                            'it to 1D', k)
+                        result[k] = np.squeeze(result[k])
+                        if len(result[k].shape) > 1:
+                            logging.error(
+                                'array of key "%s" is more '
+                                'than 1D and thus cannot '
+                                'fit into a CSV column; '
+                                'aborted', k)
+                            sys.exit(errno | ERRNO_WRITE)
+                    if not csv_rows:
+                        csv_rows = len(result[k])
+                    elif csv_rows != len(result[k]):
+                        logging.error(
+                            'array of key "%s" is '
+                            'greater in length than '
+                            'previous key, and thus '
+                            'cannot fit into a CSV '
+                            'table; aborted', k)
+                        sys.exit(errno | ERRNO_WRITE)
+                if csv_rows == 0:
+                    try:
+                        with open(args.output, 'w') as outfile:
+                            print(*result.keys(), sep=',', file=outfile)
+                    except OSError as err:
+                        logging.error(
+                            'failed to write result to "%s" due '
+                            'to %s', args.output, err)
+                        sys.exit(errno | ERRNO_WRITE)
+                    logging.info('written result to "%s"', args.output)
+                else:
+                    try:
+                        with open(args.output, 'w') as outfile:
+                            print(*result.keys(), sep=',', file=outfile)
+                            np.savetxt(
+                                outfile,
+                                np.stack(list(result.values()), axis=1),
+                                delimiter=',')
+                    except OSError as err:
+                        logging.error(
+                            'failed to write result to "%s" due '
+                            'to %s', args.output, err)
+                        sys.exit(errno | ERRNO_WRITE)
+                    logging.info('written result to "%s"', args.output)
+            else:
                 try:
                     with open(args.output, 'w') as outfile:
-                        if i:
-                            print(file=outfile)
-                        print('==>', k, '<==', file=outfile)
-                        try:
-                            np.savetxt(outfile, result[k])
-                        except ValueError as err:
-                            logging.error(
-                                'failed to write result of key '
-                                '"%s" to "%s" due to %s', k, args.output, err)
-                            sys.exit(errno | ERRNO_WRITE)
+                        for i, k in enumerate(result):
+                            if i:
+                                print(file=outfile)
+                            print('==>', k, '<==', file=outfile)
+                            try:
+                                np.savetxt(outfile, result[k])
+                            except ValueError as err:
+                                logging.error(
+                                    'failed to write result of key '
+                                    '"%s" to "%s" due to %s', k, args.output,
+                                    err)
+                                sys.exit(errno | ERRNO_WRITE)
                 except OSError as err:
                     logging.error(
                         'failed to write result of key "%s" to "%s"'
                         'due to %s', k, args.output, err)
                     sys.exit(errno | ERRNO_WRITE)
-            logging.info('written result to "%s"', args.output)
+                logging.info('written result to "%s"', args.output)
         else:
             try:
                 with open(args.output, 'wb') as outfile:
@@ -226,21 +286,63 @@ def write_data(args, result):
             logging.info('written result to "%s"', args.output)
     else:
         if args.textwrite:
-            with io.StringIO() as cbuf:
-                for i, k in enumerate(result):
-                    if i:
-                        print(file=cbuf)
-                    print('==>', k, '<==', file=cbuf)
-                    try:
-                        np.savetxt(cbuf, result[k])
-                    except ValueError as err:
+            if args.csv:
+                csv_rows = None
+                for k in result:
+                    if not result[k].shape:
+                        result[k] = np.array([result[k]])
+                    elif len(result[k].shape) > 1:
+                        logging.warning(
+                            'array of key "%s" is more '
+                            'than 1D, trying squeezing '
+                            'it to 1D', k)
+                        result[k] = np.squeeze(result[k])
+                        if len(result[k].shape) > 1:
+                            logging.error(
+                                'array of key "%s" is more '
+                                'than 1D and thus cannot '
+                                'fit into a CSV column; '
+                                'aborted', k)
+                            sys.exit(errno | ERRNO_WRITE)
+                    if not csv_rows:
+                        csv_rows = len(result[k])
+                    elif csv_rows != len(result[k]):
                         logging.error(
-                            'failed to write result of key "%s" to '
-                            '"/dev/stdout" due to %s', k, err)
+                            'array of key "%s" is '
+                            'greater in length than '
+                            'previous key, and thus '
+                            'cannot fit into a CSV '
+                            'table; aborted', k)
                         sys.exit(errno | ERRNO_WRITE)
-                cbuf.seek(0)
-                shutil.copyfileobj(cbuf, sys.stdout)
-                logging.info('written result to "/dev/stdout"')
+                if csv_rows == 0:
+                    print(*result.keys(), sep=',')
+                    logging.info('written result to "/dev/stdout"')
+                else:
+                    with io.StringIO() as cbuf:
+                        print(*result.keys(), sep=',', file=cbuf)
+                        np.savetxt(
+                            cbuf,
+                            np.stack(list(result.values()), axis=1),
+                            delimiter=',')
+                        cbuf.seek(0)
+                        shutil.copyfileobj(cbuf, sys.stdout)
+                    logging.info('written result to "/dev/stdout"')
+            else:
+                with io.StringIO() as cbuf:
+                    for i, k in enumerate(result):
+                        if i:
+                            print(file=cbuf)
+                        print('==>', k, '<==', file=cbuf)
+                        try:
+                            np.savetxt(cbuf, result[k])
+                        except ValueError as err:
+                            logging.error(
+                                'failed to write result of key "%s" to '
+                                '"/dev/stdout" due to %s', k, err)
+                            sys.exit(errno | ERRNO_WRITE)
+                    cbuf.seek(0)
+                    shutil.copyfileobj(cbuf, sys.stdout)
+                    logging.info('written result to "/dev/stdout"')
         else:
             with io.BytesIO() as cbuf:
                 np.savez(cbuf, **result)
