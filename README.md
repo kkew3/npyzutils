@@ -8,6 +8,8 @@ A collection of command line utilities to manipulate `npy` or `npz` files.
 - `npzcat`: concatenate or stack multiple `npz` files to one `npz` file
 - `npyz2img`: display data of `npy` file or `npz` file as image(s), supporting
               advanced indexing
+- `npyzindex`: index sub-arrays from `npy` or `npz` file using advanced
+               indexing notation
 
 Will add more as needed.
 
