@@ -6,9 +6,6 @@ A collection of command line utilities to manipulate `npy` or `npz` files.
 - `npyzshape`: tell the shape of array(s) stored in `npy` file or `npz` file
 - `npycat`: concatenate or stack multiple `npy` files to one `npy` file
 - `npzcat`: concatenate or stack multiple `npz` files to one `npz` file
-- `npyzz`: compress single `npy` file into `npz` file,
-           bundle and compress multiple `npy` files into one single `npz` file,
-           or re-compress `npz` file
 - `npyz2img`: display data of `npy` file or `npz` file as image(s), supporting
               advanced indexing
 - `npyz2csv`: convert 2D data into CSV format and write to stdout
