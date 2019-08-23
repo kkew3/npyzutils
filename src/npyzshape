@@ -1,85 +1,46 @@
 #!/usr/bin/env python3
 import sys
-import logging
+import io
+import ast
+import shutil
 import zipfile
 import argparse
-import typing
-
-lformat = '%(filename)s: %(levelname)s: %(message)s'
-logging.basicConfig(format=lformat)
+import logging
 
 import numpy as np
-import numpy.lib.format as npf
 
-ERROR_ARGS = 1
-ERROR_LOADFILE = 2
+ERRNO_ARGS = 1
+ERRNO_READ = 2
+
+errno = 0
+
+LOGGING_LEVEL = logging.WARNING
 
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        self.exit(ERROR_ARGS, '%s: error: %s\n' % (self.prog, message))
-
-
-def delimiter(string):
-    if '\n' in string or '\r' in string:
-        raise argparse.ArgumentTypeError
-    return string.replace(r'\t', '\t').replace(r'\0', chr(0))
-
-
-def fields_spec(string) -> typing.List[str]:
-    fields = []
-    canonical_fields = set()
-    candidates = 'fkKsSt'
-    for c in string:
-        if c not in candidates:
-            raise argparse.ArgumentTypeError(
-                'Illegal character `{}\' in FIELDS_SPEC "{}"'
-                    .format(c, string))
-        if c in canonical_fields:
-            raise argparse.ArgumentTypeError(
-                'Duplicate field specifier `{}\' in FIELDS_SPEC "{}"'
-                    .format(c, string))
-        fields.append(c)
-        canonical_fields.add(c.lower())
-    return fields
+        self.print_usage(sys.stderr)
+        args = {'prog': self.prog, 'message': message}
+        self.exit(ERRNO_ARGS, '{prog}: error: {message}\n'.format(**args))
 
 
 def make_parser():
     parser = ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description='''\
-Display array metainfo like shape in numpy npy/npz files. Reading array from
-stdin is not supported unless `--reading-header' option is used.
-
-FIELDS_SPEC format
-
-    A sequence of unique single-character field specifier.
-    List of field specifiers:
-
-        f      npy/npz filename
-        k, K   npz key; if the underlying file is an npy file, empty string is
-               displayed if using `k', otherwise "<na>"
-        s, S   comma-separated list of shape; if the underlying data is a
-               scalar, empty string is displayed if using `s', otherwie
-               "<scalar>"
-        t      the array dtype
-''')
-    parser.add_argument('-d', '--field-delimiter', dest='delim',
-                        metavar='DELIM', default=':', type=delimiter,
-                        help=r"DELIM with `\t', `\0' supported; "
-                             r"`\n', `\r' are not allowd. Default to colon")
-    parser.add_argument('-H', '--reading-header', action='store_true',
-                        help='decide the metainfo by reading the header; '
-                             'despite much faster and memory-saving, please '
-                             'note that this function may break in the future '
-                             'as it uses potentiall unstable API of numpy ('
-                             'accessing protected attributes)')
-    parser.add_argument('-c', '--fields-spec', metavar='FIELD_SPEC',
-                        type=fields_spec, default='kS',
-                        help='fields specification string; default to `'
-                             '%(default)s\'')
-    parser.add_argument('npyzfiles', metavar='NPYZFILE', nargs='*',
-                        help='the npy/npz file(s) to inspect shapes')
+        description=('Inspect array shapes of npy or npz files. The output '
+                     'will be of format `<filename>\\t<key/empty-if-npy>\\t'
+                     '<shape>/\"<scalar>"\\n\' for each line. If the input '
+                     'is from stdin, `<filename>\\t\' will be omitted in '
+                     'output lines.'))
+    parser.add_argument(
+        'npyzfiles',
+        nargs='*',
+        metavar='NPYZFILE',
+        help=('the npy/npz files to inspect shapes, or leave '
+              'empty to read from stdin raw bytes of an npy '
+              'or npz file. Note that reading from stdin '
+              'requires loading the entire file into memory, '
+              'since stdin is not seekable, whereas reading '
+              'from regular files need not'))
     return parser
 
 
@@ -87,107 +48,135 @@ class NotNpyFileError(Exception):
     pass
 
 
-def populate_result_dict(data: typing.Optional[np.ndarray],
-                         fields: typing.Sequence[str]):
-    d = {
-        's': ','.join(map(str, data.shape)),
-        'S': ','.join(map(str, data.shape)) or '<scalar>',
-        't': str(data.dtype),
-    }
-    return {f: d[f] for f in fields if f in d}
-
-
-def display_result(fields: typing.Sequence[str], delim: str,
-                   result_dict: typing.Dict[str, str]) -> None:
-    # Reference: https://stackoverflow.com/a/1077118/7881370
-    print(delim.join([''.join(('{', f, '}')).format(**result_dict)
-                      for f in fields]), flush=not sys.stdout.isatty())
-
-
-def inspect_npyshape(fp: typing.BinaryIO, fields: typing.Sequence[str]) \
-        -> typing.Dict[str, str]:
-    """
-    :raise NotNpyFileError: if ``fp`` is not an npy file handler
-    """
+def get_shape_npy(infile):
+    magic = infile.read(6)
+    if magic != b'\x93NUMPY':
+        raise NotNpyFileError
     try:
-        return populate_result_dict(None, fields)
-    except AttributeError:
+        major = infile.read(1)[0]
+    except IndexError:
+        logging.error(errmsg, filename)
+        errno |= ERRNO_READ
+        return
+    try:
+        _ = infile.read(1)[0]
+    except IndexError:
+        logging.error(errmsg, filename)
+        errno |= ERRNO_READ
+        return
+    if major == 1:
+        headerlen = infile.read(2)
+        if len(headerlen) < 2:
+            logging.error(errmsg, filename)
+            errno |= ERRNO_READ
+            return
+        headerlen = int.from_bytes(headerlen, byteorder='little', signed=False)
+    else:
+        headerlen = infile.read(4)
+        if len(headerlen) < 4:
+            logging.error(errmsg, filename)
+            errno |= ERRNO_READ
+            return
+        headerlen = int.from_bytes(headerlen, byteorder='little', signed=False)
+    header = infile.read(headerlen)
+    if len(header) < headerlen:
+        logging.error(errmsg, filename)
+        errno |= ERRNO_READ
+        return
+    if major in (1, 2):
+        header = header.decode('latin1')
+    else:
+        header = header.decode('utf-8')
+    header = ast.literal_eval(header)
+    try:
+        shape = header['shape']
+    except KeyError:
+        logging.error(errmsg, filename)
+        errno |= ERRNO_READ
+        return
+    return shape
+
+
+def inspect_file(infile):
+    global errno
+    try:
+        shape = get_shape_npy(infile)
+    except NotNpyFileError:
+        infile.seek(0)
+        shape = {}
         try:
-            return populate_result_dict(np.load(fp), fields)
-        except OSError as err:
-            raise NotNpyFileError from err
-    except OSError as err:
-        raise NotNpyFileError from err
-
-
-def inspect_npyshape_h(fp: typing.BinaryIO, *_args) -> typing.Dict[str, str]:
-    """
-    :raise NotNpyFileError:: if ``fp`` is not an npy file handler
-    """
-    try:
-        ver = npf.read_magic(fp)
-    except ValueError as err:
-        raise NotNpyFileError from err
+            with zipfile.ZipFile(infile, 'r') as zf:
+                for filename in zf.namelist():
+                    with zf.open(filename, 'r') as infile:
+                        if filename.endswith('.npy'):
+                            key = filename[:-4]
+                        else:
+                            key = filename
+                        try:
+                            shape[key] = get_shape_npy(infile)
+                        except NotNpyFileError:
+                            pass
+        except zipfile.BadZipFile:
+            logging.error(errmsg, filename)
+            errno |= ERRNO_READ
+            shape = None
     else:
-        shape, _, dtype = npf._read_array_header(fp, ver)
-    return {
-        's': ','.join(map(str, shape)),
-        'S': ','.join(map(str, shape)) or '<scalar>',
-        't': str(dtype),
-    }
-
-
-def inspect_file(filename: str, fields: typing.Sequence[str],
-                 delim: str, reading_header: bool) -> int:
-    if reading_header:
-        inspect_npyshape_ = inspect_npyshape_h
-    else:
-        inspect_npyshape_ = inspect_npyshape
-    retcode = 0
-    try:
-        zipfile.ZipFile(filename).close()
-        with np.load(filename) as zfile:
-            for name in zfile:
-                try:
-                    if set('sSt') & set(fields):
-                        data = zfile[name]
-                        rd = populate_result_dict(data, fields)
-                    else:
-                        rd = {}
-                    rd.update(f=filename, k=name, K=name)
-                    display_result(fields, delim, rd)
-                except AttributeError:
-                    logging.error('failed to inspect key "%s" in npz '
-                                  'file "%s"', name, filename)
-    except zipfile.BadZipFile:
-        with open(filename, 'rb') as infile:
-            try:
-                rd = inspect_npyshape_(infile, fields)
-                rd.update(f=filename, k='', K='<na>')
-                display_result(fields, delim, rd)
-            except NotNpyFileError:
-                logging.error('failed to load "%s" as npy file', filename)
-                retcode |= ERROR_LOADFILE
-    except BrokenPipeError:
-        pass
-    except OSError:
-        logging.error('failed to load "%s" as npz file', filename)
-        retcode |= ERROR_LOADFILE
-    return retcode
+        if shape == ():
+            shape = '<scalar>'
+    return shape
 
 
 def main():
-    retcode = 0
-    try:
-        args = make_parser().parse_args()
+    logging.basicConfig(
+        format='%(filename)s: %(levelname)s: %(message)s', level=LOGGING_LEVEL)
+    args = make_parser().parse_args()
+    if args.npyzfiles:
         for filename in args.npyzfiles:
-            retcode |= inspect_file(filename, args.fields_spec, args.delim,
-                                    args.reading_header)
-    except KeyboardInterrupt:
-        pass
-    sys.stderr.close()
-    sys.exit(retcode)
+            try:
+                with open(filename, 'rb') as infile:
+                    shape = inspect_file(infile)
+            except OSError as err:
+                logging.error('failed to load "%s" due to %s; skipped',
+                              filename, err)
+                errno |= ERRNO_READ
+            else:
+                if shape is None:
+                    logging.error('failed to load "%s" as either npy or npz '
+                                  'file; skipped', filename)
+                    errno |= ERRNO_READ
+                elif shape == {}:
+                    logging.warning('failed to find any npy file in "%s" '
+                                    'loaded as npz file; skipped', filename)
+                else:
+                    try:
+                        for k, v in shape.items():
+                            print(filename, k, v, sep='\t')
+                    except AttributeError:
+                        print(filename, '', shape, sep='\t')
+    else:
+        with io.BytesIO() as cbuf:
+            shutil.copyfileobj(sys.stdin.buffer, cbuf)
+            cbuf.seek(0)
+            shape = inspect_file(cbuf)
+        if shape is None:
+            logging.error('failed to load "/dev/stdin" as either npy or '
+                          'npz file')
+            errno |= ERRNO_READ
+        elif shape == {}:
+            logging.warning('failed to find any npy file in "/dev/stdin" '
+                            'loaded as npz file')
+        else:
+            try:
+                for k, v in shape.items():
+                    print(k, v, sep='\t')
+            except AttributeError:
+                print('', shape, sep='\t')
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BrokenPipeError:
+        pass
