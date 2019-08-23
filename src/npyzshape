@@ -11,6 +11,7 @@ import numpy as np
 
 ERRNO_ARGS = 1
 ERRNO_READ = 2
+ERRNO_INT = 130
 
 errno = 0
 
@@ -177,6 +178,8 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        sys.exit(130)
+        errno |= ERRNO_INT
     except BrokenPipeError:
-        pass
+        sys.stderr.close()
+    finally:
+        sys.exit(errno)

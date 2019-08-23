@@ -13,6 +13,7 @@ ERRNO_ARGS = 1
 ERRNO_READ = 2
 ERRNO_DATA = 4
 ERRNO_WRITE = 8
+ERRNO_INT = 130
 
 errno = 0
 
@@ -314,8 +315,12 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (KeyboardInterrupt, BrokenPipeError):
+    except KeyboardInterrupt:
         logging.warning('written data may have corrupted due to interrupt')
+        errno |= ERRNO_WRITE | ERRNO_INT
+    except BrokenPipeError:
+        logging.warning('written data may have corrupted due to broken pipe')
+        sys.stderr.close()
         errno |= ERRNO_WRITE
     finally:
         sys.exit(errno)
