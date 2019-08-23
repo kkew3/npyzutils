@@ -1,35 +1,50 @@
+# flo2npy
+```
+usage: flo2npy [-h] [-O OUTFILE] FLOFILE
+
+Convert .flo optical flow file to numpy npy format.
+
+positional arguments:
+  FLOFILE               the .flo file to convert
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -O OUTFILE, --output OUTFILE
+                        write to OUTFILE rather than FLOWFILE.npy; or `-' to
+                        write raw bytes of the result npy to stdout
+
+Adapted from https://github.com/Johswald/flow-code-python/blob/master/readFlowFile.py
+```
+
 # npycat
 ```
-usage: npycat [-h] [-s] [-d DIM] [-o TOFILE] [-t {always,auto,never}] [-S]
-              [npyfiles [npyfiles ...]]
+usage: npycat [-h] [-s] [-d DIM] [-O OUTFILE] [-H] [-T FILE]
+              [NPYFILE [NPYFILE ...]]
 
 Concatenate or stack several npy files to one npy file.
 
-Return code:
-
-    0    success
-    1    argument parsing error
-    2    failed to load one or more npy files
-    4    arrays have inconsistent dimension
-    8    failed to write result to file
-
 positional arguments:
-  npyfiles              npyfiles to concatenate; if not provided anything, a
-                        list of npy filenames will be expected at stdin, one
-                        per line
+  NPYFILE               the npy files to concatenate/stack. If none is given
+                        here and if `-T' is provided, then the NPYFILEs will
+                        be obtained from FILE. If neither NPYFILE nor `-T' is
+                        provided, then raw bytes of an npy file will be
+                        expected from stdin. If both NPYFILE and `-T' are
+                        provided, then the union of them will be used.
 
 optional arguments:
   -h, --help            show this help message and exit
   -s, --stack           stack arrays rather than concatenate them
   -d DIM, --dim DIM     the dimension to concatenate/stack, default to 0
-  -o TOFILE, --tofile TOFILE
-                        the npy file to write; if not specified, the binary
-                        result will be written to stdout, which is generally
-                        not recommended
-  -t {always,auto,never}, --textwrite {always,auto,never}
-                        when "auto", write in text mode only if the output
-                        device is stdout, default to auto
-  -S, --strict          fail immediately if a numpy file cannot be loaded
+  -O OUTFILE, --output OUTFILE
+                        the result will be written to OUTFILE. If not
+                        specified, the raw bytes of the result array (or text
+                        if `-H' is given) will be written to stdout
+  -H, --human-readable  write to OUTFILE in text mode. Note that error occurs
+                        if the underlying array is more than 2D
+  -T FILE, --from-file FILE
+                        read filenames to concatenate/stack from FILE; use `-'
+                        to denote stdin. In either case the filenames should
+                        be placed one per line
 ```
 
 # npyz2img
@@ -120,112 +135,107 @@ output options:
                         exists; otherwise overwrite existing files
 ```
 
-# npyzshape
+# npyzindex
 ```
-usage: npyzshape [-h] [-d DELIM] [-H] [-c FIELD_SPEC]
+usage: npyzindex [-h] [-e INDEX/KEYEDINDEX] [-T FILE] [-O [.SUFFIX/-]]
                  [NPYZFILE [NPYZFILE ...]]
 
-Display array metainfo like shape in numpy npy/npz files. Reading array from
-stdin is not supported unless `--reading-header' option is used.
-
-FIELDS_SPEC format
-
-    A sequence of unique single-character field specifier.
-    List of field specifiers:
-
-        f      npy/npz filename
-        k, K   npz key; if the underlying file is an npy file, empty string is
-               displayed if using `k', otherwise "<na>"
-        s, S   comma-separated list of shape; if the underlying data is a
-               scalar, empty string is displayed if using `s', otherwie
-               "<scalar>"
-        t      the array dtype
+Index subarray from npy/npz files.
 
 positional arguments:
-  NPYZFILE              the npy/npz file(s) to inspect shapes
+  NPYZFILE              the npy/npz files to index using the set of
+                        [KEY/]INDEX expression. A series of both npy and npz
+                        files may lead to KeyError (see help for `-e' option.
+                        If none is given, and if `-T' is provided, then the
+                        NPYZFILEs will be obtained from FILE. If neither
+                        NPYZFILE nor `-T' is provided, then raw bytes of an
+                        npy/npz file will be expected from stdin. If both
+                        NPYZFILE and `-T' are provided, then the union of them
+                        will be used
 
 optional arguments:
   -h, --help            show this help message and exit
-  -d DELIM, --field-delimiter DELIM
-                        DELIM with `\t', `\0' supported; `\n', `\r' are not
-                        allowd. Default to colon
-  -H, --reading-header  decide the metainfo by reading the header; despite
-                        much faster and memory-saving, please note that this
-                        function may break in the future as it uses potentiall
-                        unstable API of numpy (accessing protected attributes)
-  -c FIELD_SPEC, --fields-spec FIELD_SPEC
-                        fields specification string; default to `kS'
-```
-
-# npyzz
-```
-usage: npyzz [-h] [-B] [-o TOFILE] [--overwrite {always,ask,skip,abort}] [-S]
-             [FILE [FILE ...]]
-
-Zip and compress npy or npz file(s). If the input is FILENAME.npy, the default
-output will be FILENAME.npz with FILENAME.npy as a zip file entry within
-FILENAME.npz. If the input is FILENAME.npz, the default output will be written
-in-place such that the content is compressed if not already compressed. If the
-input consists of multiple npy files, e.g. F1.npy, F2.npy, the output filename
-must be specified, e.g. as OUT.npz, which will contain F1.npy and F2.npy as
-zip file entries.
-
-positional arguments:
-  FILE                  npy/npz files to compress; if nothing is specified, a
-                        list of npy/npz filenames will be expected at stdin,
+  -e INDEX/KEYEDINDEX, --index-expr INDEX/KEYEDINDEX
+                        numpy style ndarray index to sample from underlying
+                        array. The index may either be INDEX, or
+                        KEY<slash>INDEX, where the latter form is to sample
+                        from KEY in npz. For example, `-e2' picks the third
+                        element from data, and `-etrain/2' picks the third
+                        element from the array named `train'. If the
+                        underlying file is an npy file, using the keyed form
+                        leads to KeyError; if the underlying is an npz file,
+                        using the key-free form applies the indexing to all
+                        keys simultaneously. Multiple `-e' options can be
+                        appended to form a sequence of sampling. For example,
+                        `-e2 -e:,3' picks the third row and then the fourth
+                        column of the array, which is equivalent to `-e2,3'
+  -T FILE, --from-file FILE
+                        read filenames to index from FILE; use `-' to denote
+                        stdin. In either case the filenames should be placed
                         one per line
+  -O [.SUFFIX/-], --output [.SUFFIX/-]
+                        controls how the output is saved. If using the form
+                        .SUFFIX, the indexed array will be saved as
+                        `NPYZFILE.SUFFIX'. If specified as `-O-', the output
+                        bytes will be written to stdout, or raise error if
+                        there's more than one NPYZFILE. If specified as `-O',
+                        the change will be made in-place. If not specified as
+                        `-O-' but input is from stdin, it will be treated as
+                        if `-O-' were specified. Default to `.out'
+```
+
+# npyzshape
+```
+usage: npyzshape [-h] [NPYZFILE [NPYZFILE ...]]
+
+Inspect array shapes of npy or npz files. The output will be of format
+`<filename>\t<key/empty-if-npy>\t<shape>/"<scalar>"\n' for each line. If the
+input is from stdin, `<filename>\t' will be omitted in output lines.
+
+positional arguments:
+  NPYZFILE    the npy/npz files to inspect shapes, or leave empty to read from
+              stdin raw bytes of an npy or npz file. Note that reading from
+              stdin requires loading the entire file into memory, since stdin
+              is not seekable, whereas reading from regular files need not
 
 optional arguments:
-  -h, --help            show this help message and exit
-  -B, --bundle-npy      bundle several npy files together into TOFILE; if not
-                        in strict mode, all non-npy FILEs (e.g. npz files)
-                        will be omitted, otherwise, error raised
-  -o TOFILE, --tofile TOFILE
-                        the npz file to write. TOFILE should ends with `.npz'.
-                        If `--bundle-npy' is specified, this option is
-                        mandatory. If more than one FILE is specified, this
-                        option is omitted (so default TOFILE as mentioned in
-                        Description will be adopted).
-  --overwrite {always,ask,skip,abort}
-                        overwriting policy when TOFILE is an existing file. If
-                        `always', always overwrite. If `ask', interactively
-                        prompt user what to do (skip/abort/rename current
-                        TOFILE). If `skip', skip current TOFILE. If `abort',
-                        abort the program
-  -S, --strict          option to enable strict mode. When in strict mode, if
-                        one of FILE cannot be loaded, or if one of TOFILE
-                        cannot be written, or if there exists duplicate zip
-                        file entry, the program will be aborted. See also
-                        `--bundle-npy'
+  -h, --help  show this help message and exit
 ```
 
 # npzcat
 ```
-usage: npzcat [-h] [-s] [-d DIM] [-o TOFILE] [-S] [-k KEYS [KEYS ...]] [-n]
+usage: npzcat [-h] [-s] [-d DIM] [-K KEYS [KEYS ...]] [-O OUTFILE] [-H]
+              [--csv] [-T FILE]
               [NPZFILE [NPZFILE ...]]
 
-Concatenate or stack several npz files to one npz file. Use `--' to mark the
-beginning of NPZFILEs if necessary.
+Concatenate or stack several npz files to one npz file.
 
 positional arguments:
-  NPZFILE               npzfiles to concatenate; if not provided anything, a
-                        list of npz filenames will be expected at stdin, one
-                        per line
+  NPZFILE               the npz files to concatenate/stack. If none is given
+                        here and if `-T' is provided, then the NPZFILEs will
+                        be obtained from FILE. If neither NPZFILE nor `-T' is
+                        provided, then raw bytes of an npz file will be
+                        expected from stdin. If both NPZFILE and `-T' are
+                        provided, then the union of them will be used.
 
 optional arguments:
   -h, --help            show this help message and exit
   -s, --stack           stack arrays rather than concatenate them
   -d DIM, --dim DIM     the dimension to concatenate/stack, default to 0
-  -o TOFILE, --tofile TOFILE
-                        the npz file to write; if not specified, the binary
-                        result will be written to stdout, which is generally
-                        not recommended
-  -S, --strict          fail immediately if a numpy file cannot be loaded
-  -k KEYS [KEYS ...], --keys KEYS [KEYS ...]
+  -K KEYS [KEYS ...], --keys KEYS [KEYS ...]
                         npz field keys to use; if not specified, all field
                         keys of the first npz file provided will be used
-  -n, --print-name      if specified, print the output filename in the end.
-                        This option will only be considered if option `-o' has
-                        been specified
+  -O OUTFILE, --output OUTFILE
+                        the result will be written to OUTFILE. If not
+                        specified, the raw bytes (or text if `-H' is given)
+                        will be written to stdout
+  -H, --human-readable  write to OUTFILE in text mode. Note that error occurs
+                        if any underlying array is more then 2D
+  --csv                 arrange the output in CSV with field names equal to
+                        the key names; effective only if `-H' is specified
+  -T FILE, --from-file FILE
+                        read filenames to concatenate/stack from FILE; use `-'
+                        to denote stdin. In either case the filenames should
+                        be placed one per line
 ```
 
