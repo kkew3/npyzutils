@@ -10,6 +10,7 @@ A collection of command line utilities to manipulate `npy` or `npz` files.
               advanced indexing
 - `npyzindex`: index sub-arrays from `npy` or `npz` file using advanced
                indexing notation
+- `flo2npy`: convert `.flo` optical flow data file to `npy` file
 
 Will add more as needed.
 
