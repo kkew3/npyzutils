@@ -28,6 +28,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def make_parser():
     parser = ArgumentParser(
+        prog='flo2npy',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='Convert .flo optical flow file to numpy npy format.',
         epilog=('Adapted from https://github.com/Johswald/'

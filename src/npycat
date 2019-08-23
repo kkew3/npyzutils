@@ -27,6 +27,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def make_parser():
     parser = ArgumentParser(
+        prog='npycat',
         description='Concatenate or stack several npy files to one npy file.')
     parser.add_argument(
         '-s',

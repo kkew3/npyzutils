@@ -69,6 +69,7 @@ stdout = object()
 
 def make_parser():
     parser = ArgumentParser(
+        prog='npyz2img',
         description='Make image(s) from npy/npz file. Use `--\' to mark the '
                     'beginning of NPYZFILEs if necessary.')
     parser.add_argument('npyzfile', metavar='NPYZFILE', type=os.path.normpath,

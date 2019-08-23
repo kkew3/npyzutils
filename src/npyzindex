@@ -28,7 +28,9 @@ class ArgumentParser(argparse.ArgumentParser):
 
 
 def make_parser():
-    parser = ArgumentParser(description='Index subarray from npy/npz files.')
+    parser = ArgumentParser(
+        prog='npyzindex',
+        description='Index subarray from npy/npz files.')
     parser.add_argument(
         '-e',
         '--index-expr',

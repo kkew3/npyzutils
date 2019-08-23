@@ -27,6 +27,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def make_parser():
     parser = ArgumentParser(
+        prog='npyzshape',
         description=('Inspect array shapes of npy or npz files. The output '
                      'will be of format `<filename>\\t<key/empty-if-npy>\\t'
                      '<shape>/\"<scalar>"\\n\' for each line. If the input '
@@ -50,38 +51,34 @@ class NotNpyFileError(Exception):
 
 
 def get_shape_npy(infile):
+    global errno
     magic = infile.read(6)
     if magic != b'\x93NUMPY':
         raise NotNpyFileError
     try:
         major = infile.read(1)[0]
     except IndexError:
-        logging.error(errmsg, filename)
         errno |= ERRNO_READ
         return
     try:
         _ = infile.read(1)[0]
     except IndexError:
-        logging.error(errmsg, filename)
         errno |= ERRNO_READ
         return
     if major == 1:
         headerlen = infile.read(2)
         if len(headerlen) < 2:
-            logging.error(errmsg, filename)
             errno |= ERRNO_READ
             return
         headerlen = int.from_bytes(headerlen, byteorder='little', signed=False)
     else:
         headerlen = infile.read(4)
         if len(headerlen) < 4:
-            logging.error(errmsg, filename)
             errno |= ERRNO_READ
             return
         headerlen = int.from_bytes(headerlen, byteorder='little', signed=False)
     header = infile.read(headerlen)
     if len(header) < headerlen:
-        logging.error(errmsg, filename)
         errno |= ERRNO_READ
         return
     if major in (1, 2):
@@ -92,7 +89,6 @@ def get_shape_npy(infile):
     try:
         shape = header['shape']
     except KeyError:
-        logging.error(errmsg, filename)
         errno |= ERRNO_READ
         return
     return shape
@@ -118,7 +114,6 @@ def inspect_file(infile):
                         except NotNpyFileError:
                             pass
         except zipfile.BadZipFile:
-            logging.error(errmsg, filename)
             errno |= ERRNO_READ
             shape = None
     else:
