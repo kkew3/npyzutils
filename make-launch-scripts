@@ -12,7 +12,7 @@ write_launch_script() {
 	local tofile="$2"
 	cat > "$tofile" << EOF
 #!/bin/bash
-PYTHONHOME="${CURDIR}/rt" python3 "${CURDIR}/${pyname}" "\$@"
+"${CURDIR}/rt/bin/python3" "${CURDIR}/${pyname}" "\$@"
 EOF
 }
 
